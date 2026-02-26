@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\jci_globe.ico</ApplicationIcon>
+    <AssemblyName>ProcDumpMonitor</AssemblyName>
+    <RootNamespace>ProcDumpMonitor</RootNamespace>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="TaskScheduler" Version="2.12.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\jci_globe.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\jci_globe_256.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
