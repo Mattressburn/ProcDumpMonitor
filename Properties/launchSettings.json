@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "ProcDumpMonitor (Debug)": {
+      "commandName": "Project"
+    },
+    "Published EXE (dist)": {
+      "commandName": "Executable",
+      "executablePath": "$(SolutionDir)dist\\ProcDumpMonitor.exe",
+      "workingDirectory": "$(SolutionDir)dist",
+      "nativeDebugging": true
+    }
+  }
+}

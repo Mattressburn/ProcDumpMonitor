@@ -1,0 +1,38 @@
+--- OneShot Self-Test ---
+
+[15:49:47] Saving config…
+[15:49:47] Creating scheduled task 'ProcDump Monitor SelfTest'…
+[15:49:47] Task 'ProcDump Monitor SelfTest' created.
+[15:49:47] Simulating dump creation…
+[15:49:48] ProcDump exit code: 0
+[15:49:48] Dump file: C:\Users\jraburm\AppData\Local\Temp\ProcDumpMonitor_SelfTest\SelfTest.exe_20260228_154947_simulated.dmp
+[15:49:48] Sending notification email to matthew.raburn@jci.com…
+[15:49:48] Email sent successfully.
+[15:49:48] Removing scheduled task 'ProcDump Monitor SelfTest'…
+[15:49:48] Task removed.
+[15:49:48] One-shot sequence completed successfully.
+Steps:
+  [15:49:47] Saving config…
+  [15:49:47] Creating scheduled task 'ProcDump Monitor SelfTest'…
+  [15:49:47] Task 'ProcDump Monitor SelfTest' created.
+  [15:49:47] Simulating dump creation…
+  [15:49:48] ProcDump exit code: 0
+  [15:49:48] Dump file: C:\Users\jraburm\AppData\Local\Temp\ProcDumpMonitor_SelfTest\SelfTest.exe_20260228_154947_simulated.dmp
+  [15:49:48] Sending notification email to matthew.raburn@jci.com…
+  [15:49:48] Email sent successfully.
+  [15:49:48] Removing scheduled task 'ProcDump Monitor SelfTest'…
+  [15:49:48] Task removed.
+  [15:49:48] One-shot sequence completed successfully.
+
+  ? Success: True (expected True)
+  ? TaskCreated: True (expected True)
+  ? TaskRemoved: True (expected True)
+  ? EmailSent: True (expected True)
+  ? Simulated: True (expected True)
+  ? Error is null: True (expected True)
+  ? DumpFilePath not null: True (expected True)
+  ? FakeEmail.CallCount: True (expected True)
+  ? Task no longer exists: True (expected True)
+  ? Simulated dump file exists: True (expected True)
+
+ALL TESTS PASSED.

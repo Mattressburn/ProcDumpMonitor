@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -9,19 +9,77 @@
     <ApplicationIcon>Assets\jci_globe.ico</ApplicationIcon>
     <AssemblyName>ProcDumpMonitor</AssemblyName>
     <RootNamespace>ProcDumpMonitor</RootNamespace>
+    <BuildDate>$([System.DateTime]::UtcNow.ToString("MM.dd.yy"))</BuildDate>
+
+    <!-- Publish as a single self-contained exe -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
+  <!-- Release-only: trimming + size optimisations.
+       Trimming is NOT applied to Debug builds so F5 always works without
+       reflection/COM issues introduced by the linker.
+       TrimmerSingleWarn=false expands IL2104 into per-member detail warnings.
+       BuiltInComInteropSupport MUST be true: WinForms needs COM for OLE
+       drag-drop (SetAcceptDrops), modal-dialog ComponentManager, and UIA
+       accessibility.  The TaskScheduler library also uses COM.
+       See https://aka.ms/dotnet-illink/com
+       TrimmerRoots.xml preserves System.Windows.Forms and its Primitives
+       assembly in full because they contain internal COM interface types
+       (IMsoComponentManager, IDropTarget, IRawElementProviderSimple, etc.)
+       that are only resolved at runtime via COM QueryInterface and would
+       otherwise be stripped by the linker. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
+    <_SuppressWinFormsTrimError>true</_SuppressWinFormsTrimError>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Root the two WinForms assemblies so internal COM types survive trimming -->
+  <ItemGroup Condition="'$(PublishTrimmed)' == 'true'">
+    <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
+  </ItemGroup>
+
   <ItemGroup>
+    <InternalsVisibleTo Include="ProcDumpMonitor.Tests" />
+  </ItemGroup>
+
+  <!-- Exclude the test project from the main project's compilation -->
+  <ItemGroup>
+    <Compile Remove="tests\**" />
+    <None Remove="tests\**" />
+    <Content Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
     <PackageReference Include="TaskScheduler" Version="2.12.2" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\jci_globe.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Assets\jci_globe_256.png" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Assets\jci_globe.ico" LogicalName="ProcDumpMonitor.jci_globe.ico" />
+    <EmbeddedResource Include="Assets\logo.png" LogicalName="ProcDumpMonitor.logo.png" Condition="Exists('Assets\logo.png')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>BuildDate</_Parameter1>
+      <_Parameter2>$(BuildDate)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="DiagRunner\DiagRunner.csproj" />
   </ItemGroup>
 
 </Project>

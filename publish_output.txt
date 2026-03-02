@@ -1,0 +1,4 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ProcDumpMonitor -> C:\Dev\ProcDumpMonitor\bin\Release\net8.0-windows\win-x64\ProcDumpMonitor.dll
+  ProcDumpMonitor -> C:\Dev\ProcDumpMonitor\bin\Release\net8.0-windows\win-x64\publish\

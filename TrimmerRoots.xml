@@ -1,0 +1,23 @@
+<linker>
+  <!--
+    WinForms uses COM interfaces internally (OLE drag-drop, IMsoComponentManager,
+    UIA accessibility) that are only resolved at runtime via QueryInterface.
+    The IL trimmer cannot see these usages statically and removes the types,
+    causing TypeLoadException in the published build.
+    Preserve these two assemblies in full so all internal COM types survive.
+  -->
+  <assembly fullname="System.Windows.Forms" preserve="all" />
+  <assembly fullname="System.Windows.Forms.Primitives" preserve="all" />
+
+  <!--
+    Microsoft.Win32.TaskScheduler wraps the Windows Task Scheduler via COM
+    import interfaces (V2Interop.ITaskService, ITaskFolder, ITaskDefinition,
+    etc.) that use [ComImport], [InterfaceType(InterfaceIsIUnknown)], and
+    [MarshalAs(UnmanagedType.Struct)] for VARIANT parameters.
+    TrimMode=full strips unused interface members (breaking vtable offsets)
+    and MarshalAs attributes (breaking object→VARIANT marshalling), causing
+    E_INVALIDARG (0x80070057) when ITaskService.Connect is called.
+    Preserve the entire assembly so COM interop stays intact.
+  -->
+  <assembly fullname="Microsoft.Win32.TaskScheduler" preserve="all" />
+</linker>

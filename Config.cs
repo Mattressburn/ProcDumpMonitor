@@ -5,8 +5,38 @@ using System.Text.Json.Serialization;
 
 namespace ProcDumpMonitor;
 
+// Source-generated JSON context for trim-safe serialization (Config only)
+[JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault)]
+[JsonSerializable(typeof(Config))]
+internal partial class ConfigJsonContext : JsonSerializerContext { }
+
+// Additional source-gen context for non-config types (always write all fields)
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(HealthStatus))]
+[JsonSerializable(typeof(WebhookPayload))]
+[JsonSerializable(typeof(CliStatusOutput))]
+[JsonSerializable(typeof(OneShotResult))]
+internal partial class AppJsonContext : JsonSerializerContext { }
+
+/// <summary>JSON model for --status CLI output.</summary>
+public class CliStatusOutput
+{
+    public string TaskName { get; set; } = "";
+    public string MachineName { get; set; } = "";
+    public bool Exists { get; set; }
+    public string State { get; set; } = "";
+    public string LastRunTime { get; set; } = "";
+    public string LastRunResult { get; set; } = "";
+    public string NextRunTime { get; set; } = "";
+}
+
 public class Config
 {
+    public const int CurrentVersion = 2;
+
+    // ── Schema version (0 = v1/unversioned; 2 = current) ──
+    public int ConfigVersion { get; set; }
+
     // Target
     public string TargetName { get; set; } = "SoftwareHouse.CrossFire.Server";
 
@@ -20,18 +50,44 @@ public class Config
     public int MaxDumps { get; set; } = 1;
     public int RestartDelaySeconds { get; set; } = 5;
 
+    // ── Advanced ProcDump triggers (F7) ──
+    public int CpuThreshold { get; set; }                 // 0 = off; 1-100 → -c <N>
+    public int CpuLowThreshold { get; set; }              // 0 = off; 1-100 → -cl <N>
+    public int MemoryCommitMB { get; set; }               // 0 = off; → -m <N>
+    public int HangWindowSeconds { get; set; }            // 0 = off; >0 → -h
+
+    // ── Disk-space guard (F4) ──
+    public long MinFreeDiskMB { get; set; } = 5120;       // 5 GB default
+
+    // ── Dump stability check (F1) ──
+    public int DumpStabilityTimeoutSeconds { get; set; } = 30;
+    public int DumpStabilityPollSeconds { get; set; } = 2;
+
+    // ── Log rotation (F8) ──
+    public int MaxLogSizeMB { get; set; } = 10;
+    public int MaxLogFiles { get; set; } = 5;
+
+    // ── Dump retention (F9) ──
+    public int DumpRetentionDays { get; set; }             // 0 = disabled
+    public double DumpRetentionMaxGB { get; set; }         // 0 = disabled
+
     // Task
     public string TaskName { get; set; } = "ProcDump Monitor - CrossFire";
 
-    // Email
+    // ── Email (F5: multi-recipient) ──
     public bool EmailEnabled { get; set; } = true;
     public string SmtpServer { get; set; } = "smtp.jci.com";
     public int SmtpPort { get; set; } = 25;
     public bool UseSsl { get; set; } = false;
     public string FromAddress { get; set; } = "matthew.raburn@jci.com";
-    public string ToAddress { get; set; } = "matthew.raburn@jci.com";
+    public string ToAddress { get; set; } = "matthew.raburn@jci.com"; // semicolon-delimited
+    public string CcAddress { get; set; } = "";                       // semicolon-delimited
     public string SmtpUsername { get; set; } = "";
-    public string EncryptedPasswordBlob { get; set; } = "";   // Base64-encoded DPAPI blob
+    public string EncryptedPasswordBlob { get; set; } = "";           // Base64-encoded DPAPI blob
+
+    // ── Webhook (F10) ──
+    public bool WebhookEnabled { get; set; }
+    public string WebhookUrl { get; set; } = "";
 
     // ----- helpers -----
 
@@ -83,6 +139,12 @@ public class Config
         if (DumpOnTerminate) args.Add("-t");
         if (UseClone) args.Add("-r");
 
+        // Advanced triggers (F7)
+        if (CpuThreshold > 0) args.Add($"-c {CpuThreshold}");
+        if (CpuLowThreshold > 0) args.Add($"-cl {CpuLowThreshold}");
+        if (MemoryCommitMB > 0) args.Add($"-m {MemoryCommitMB}");
+        if (HangWindowSeconds > 0) args.Add("-h");
+
         args.Add($"-n {MaxDumps}");
         args.Add($"-w {TargetName}");
         args.Add($"\"{DumpDirectory}\"");
@@ -101,16 +163,17 @@ public class Config
         }
     }
 
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
-    };
-
     public void Save(string? path = null)
     {
         path ??= DefaultConfigPath;
-        string json = JsonSerializer.Serialize(this, JsonOpts);
+
+        // Back up before overwriting if migrating
+        ConfigMigrator.BackupIfNeeded(path);
+
+        // Always stamp the current schema version
+        ConfigVersion = CurrentVersion;
+
+        string json = JsonSerializer.Serialize(this, ConfigJsonContext.Default.Config);
         File.WriteAllText(path, json);
     }
 
@@ -118,15 +181,15 @@ public class Config
     {
         path ??= DefaultConfigPath;
         if (!File.Exists(path))
-            return new Config();
+            return new Config { ConfigVersion = CurrentVersion };
         try
         {
             string json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<Config>(json) ?? new Config();
+            return ConfigMigrator.Migrate(json);
         }
         catch
         {
-            return new Config();
+            return new Config { ConfigVersion = CurrentVersion };
         }
     }
 }

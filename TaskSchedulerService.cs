@@ -29,55 +29,85 @@ public static class TaskSchedulerService
     /// <summary>Create or update the scheduled task. Returns true if it was an update (task already existed).</summary>
     public static bool InstallOrUpdate(Config cfg)
     {
+        // ── Validate inputs before touching the Task Scheduler ──
+        string taskName = TaskNameHelper.Sanitize(cfg.TaskName);
+        if (string.IsNullOrWhiteSpace(taskName))
+            throw new InvalidOperationException("Task name is empty after sanitisation.");
+
         string exePath = GetExePath();
+        if (!File.Exists(exePath))
+            throw new FileNotFoundException($"Executable not found: {exePath}");
+
         string configPath = Config.DefaultConfigPath;
+        string arguments = $"--monitor --config \"{configPath}\"";
+        string workDir = AppContext.BaseDirectory;
 
-        using var ts = new TaskService();
+        Logger.Log("TaskSvc", $"InstallOrUpdate: taskName={taskName}");
+        Logger.Log("TaskSvc", $"  exePath={exePath}");
+        Logger.Log("TaskSvc", $"  arguments={arguments}");
+        Logger.Log("TaskSvc", $"  workDir={workDir}");
 
-        bool existed = ts.GetTask(cfg.TaskName) != null;
+        try
+        {
+            using var ts = new TaskService();
 
-        // Remove existing task if present
-        ts.RootFolder.DeleteTask(cfg.TaskName, false);
+            bool existed = ts.GetTask(taskName) != null;
 
-        var td = ts.NewTask();
-        td.RegistrationInfo.Description =
-            $"ProcDump Monitor – watches for {cfg.TargetName} and captures crash dumps.";
+            // Remove existing task if present (best-effort)
+            try { ts.RootFolder.DeleteTask(taskName, false); }
+            catch (Exception delEx)
+            {
+                Logger.Log("TaskSvc", $"DeleteTask best-effort failed (non-fatal): {delEx.Message}");
+            }
 
-        // Principal: SYSTEM, highest privileges
-        td.Principal.UserId = "SYSTEM";
-        td.Principal.LogonType = TaskLogonType.ServiceAccount;
-        td.Principal.RunLevel = TaskRunLevel.Highest;
+            var td = ts.NewTask();
+            td.RegistrationInfo.Description =
+                $"ProcDump Monitor \u2013 watches for {cfg.TargetName} and captures crash dumps.";
 
-        // Trigger: at startup
-        td.Triggers.Add(new BootTrigger());
+            // Principal: SYSTEM, highest privileges
+            td.Principal.UserId = "SYSTEM";
+            td.Principal.LogonType = TaskLogonType.ServiceAccount;
+            td.Principal.RunLevel = TaskRunLevel.Highest;
 
-        // Action: run this EXE in monitor mode
-        td.Actions.Add(new ExecAction(
-            exePath,
-            $"--monitor --config \"{configPath}\"",
-            AppContext.BaseDirectory));
+            // Trigger: at startup
+            td.Triggers.Add(new BootTrigger());
 
-        // Settings
-        td.Settings.AllowDemandStart = true;
-        td.Settings.DisallowStartIfOnBatteries = false;
-        td.Settings.StopIfGoingOnBatteries = false;
-        td.Settings.RunOnlyIfIdle = false;
-        td.Settings.IdleSettings.StopOnIdleEnd = false;
-        td.Settings.StartWhenAvailable = true;
-        td.Settings.RestartInterval = TimeSpan.FromMinutes(1);
-        td.Settings.RestartCount = 999;
-        td.Settings.MultipleInstances = TaskInstancesPolicy.IgnoreNew;
-        td.Settings.ExecutionTimeLimit = TimeSpan.Zero; // no time limit
+            // Action: run this EXE in monitor mode
+            td.Actions.Add(new ExecAction(exePath, arguments, workDir));
 
-        ts.RootFolder.RegisterTaskDefinition(
-            cfg.TaskName,
-            td,
-            TaskCreation.CreateOrUpdate,
-            "SYSTEM",
-            null,
-            TaskLogonType.ServiceAccount);
+            // Settings
+            td.Settings.AllowDemandStart = true;
+            td.Settings.DisallowStartIfOnBatteries = false;
+            td.Settings.StopIfGoingOnBatteries = false;
+            td.Settings.RunOnlyIfIdle = false;
+            td.Settings.IdleSettings.StopOnIdleEnd = false;
+            td.Settings.StartWhenAvailable = true;
+            td.Settings.RestartInterval = TimeSpan.FromMinutes(1);
+            td.Settings.RestartCount = 999;
+            td.Settings.MultipleInstances = TaskInstancesPolicy.IgnoreNew;
+            td.Settings.ExecutionTimeLimit = TimeSpan.Zero; // no time limit
 
-        return existed;
+            Logger.Log("TaskSvc", "Calling RegisterTaskDefinition…");
+
+            ts.RootFolder.RegisterTaskDefinition(
+                taskName,
+                td,
+                TaskCreation.CreateOrUpdate,
+                "SYSTEM",
+                null,
+                TaskLogonType.ServiceAccount);
+
+            Logger.Log("TaskSvc", $"Task '{taskName}' registered successfully (existed={existed}).");
+            return existed;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("TaskSvc", $"RegisterTaskDefinition FAILED: {ex.GetType().FullName}: {ex.Message} (HRESULT 0x{ex.HResult:X8})");
+            if (ex.InnerException != null)
+                Logger.Log("TaskSvc", $"  Inner: {ex.InnerException.GetType().FullName}: {ex.InnerException.Message}");
+            Logger.Log("TaskSvc", $"  StackTrace: {ex.StackTrace}");
+            throw;  // rethrow so the UI catch block formats and displays it
+        }
     }
 
     /// <summary>Run the task now (demand start).</summary>

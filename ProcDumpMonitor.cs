@@ -4,14 +4,34 @@ namespace ProcDumpMonitor;
 
 /// <summary>
 /// Runs in --monitor mode: infinite loop that launches ProcDump, waits for it,
-/// detects new .dmp files, emails, and restarts.
+/// detects new .dmp files, checks stability, notifies, and restarts.
+/// Integrates: disk-space guard, dump stability check, health heartbeat,
+/// retention cleanup, and the notifier pipeline (email + webhook).
 /// </summary>
 public static class ProcDumpMonitorLoop
 {
     private static volatile bool _stopping;
 
+    // ── Notifier pipeline ──
+    private static readonly INotifier[] Notifiers = { new EmailNotifierAdapter(), new WebhookNotifier() };
+
+    // ── Persistent state across cycles ──
+    private static HealthStatus _health = new();
+    private static DateTime _lastLowDiskNotifyUtc = DateTime.MinValue;
+
     public static void Run(Config cfg)
     {
+        _stopping = false;
+
+        // Configure logger rotation from config
+        Logger.MaxLogSizeMB = cfg.MaxLogSizeMB;
+        Logger.MaxLogFiles = cfg.MaxLogFiles;
+
+        // Resume persistent state (e.g. TotalDumpCount survives restart)
+        _health = HealthWriter.Load();
+        _health.MonitorPid = Environment.ProcessId;
+        _health.Version = typeof(ProcDumpMonitorLoop).Assembly.GetName().Version?.ToString() ?? "1.0.0";
+
         Logger.Log("Monitor", "ProcDump Monitor started.");
         Logger.Log("Monitor", $"Target: {cfg.TargetName}");
         Logger.Log("Monitor", $"ProcDump: {cfg.ProcDumpPath}");
@@ -39,22 +59,60 @@ public static class ProcDumpMonitorLoop
         while (!_stopping)
         {
             DateTime cycleStart = DateTime.UtcNow;
-            Logger.Log("Monitor", "Launching ProcDump cycle...");
+            _health.LastCycleUtc = cycleStart.ToString("O");
+            _health.LastError = "";
+            _health.DiskSpaceLow = false;
+
+            Logger.Log("Monitor", "── Cycle start ──");
 
             try
             {
+                // ── Disk-space guard (F4) ──
+                if (cfg.MinFreeDiskMB > 0)
+                {
+                    var (ok, freeMB) = DiskSpaceGuard.CheckFreeSpace(cfg.DumpDirectory, cfg.MinFreeDiskMB);
+                    _health.FreeDiskMB = freeMB;
+                    _health.DiskSpaceLow = !ok;
+
+                    if (!ok)
+                    {
+                        string warnMsg = $"Skipping cycle — only {freeMB} MB free on {Path.GetPathRoot(cfg.DumpDirectory)} (threshold: {cfg.MinFreeDiskMB} MB)";
+                        Logger.Log("Monitor", warnMsg);
+
+                        // Rate-limited low-disk notification (once per hour)
+                        if ((DateTime.UtcNow - _lastLowDiskNotifyUtc).TotalHours >= 1)
+                        {
+                            _lastLowDiskNotifyUtc = DateTime.UtcNow;
+                            NotifyWarningAll(cfg,
+                                $"[ProcDump] Low disk warning on {Environment.MachineName}",
+                                warnMsg);
+                        }
+
+                        _health.NextRetryUtc = DateTime.UtcNow.AddSeconds(cfg.RestartDelaySeconds).ToString("O");
+                        HealthWriter.Write(_health);
+                        WaitBeforeRestart(cfg.RestartDelaySeconds);
+                        continue;
+                    }
+                }
+
+                // ── Dump retention / auto-cleanup (F9) ──
+                RetentionPolicy.Apply(cfg.DumpDirectory, cfg.DumpRetentionDays, cfg.DumpRetentionMaxGB);
+
+                // ── Launch ProcDump cycle ──
                 RunProcDumpCycle(cfg, cycleStart);
             }
             catch (Exception ex)
             {
+                _health.LastError = ex.Message;
                 Logger.Log("Monitor", $"Cycle error: {ex.Message}");
             }
 
+            _health.NextRetryUtc = DateTime.UtcNow.AddSeconds(cfg.RestartDelaySeconds).ToString("O");
+            HealthWriter.Write(_health);
+
             if (_stopping) break;
 
-            Logger.Log("Monitor", $"Sleeping {cfg.RestartDelaySeconds}s before restart...");
-            for (int i = 0; i < cfg.RestartDelaySeconds * 10 && !_stopping; i++)
-                Thread.Sleep(100);
+            WaitBeforeRestart(cfg.RestartDelaySeconds);
         }
 
         Logger.Log("Monitor", "ProcDump Monitor stopped.");
@@ -87,13 +145,23 @@ public static class ProcDumpMonitorLoop
         };
 
         proc.Start();
+        _health.ProcDumpPid = proc.Id;
         proc.BeginOutputReadLine();
         proc.BeginErrorReadLine();
 
-        // Wait for ProcDump to exit (it exits after -n dumps or target exits)
+        // Wait for ProcDump to exit, but keep health heartbeat alive so
+        // external monitors can distinguish "waiting for target" from "stalled"
+        int heartbeatCounter = 0;
         while (!proc.HasExited && !_stopping)
         {
             proc.WaitForExit(1000);
+
+            if (++heartbeatCounter % 30 == 0)
+            {
+                _health.LastCycleUtc = DateTime.UtcNow.ToString("O");
+                _health.LastError = "";
+                HealthWriter.Write(_health);
+            }
         }
 
         if (!proc.HasExited)
@@ -101,7 +169,10 @@ public static class ProcDumpMonitorLoop
             try { proc.Kill(true); } catch { /* best effort */ }
         }
 
-        Logger.Log("Monitor", $"ProcDump exited with code {(proc.HasExited ? proc.ExitCode : -1)}.");
+        _health.ProcDumpPid = 0;
+        int exitCode = proc.HasExited ? proc.ExitCode : -1;
+        _health.LastProcDumpExitCode = exitCode;
+        Logger.Log("Monitor", $"ProcDump exited with code {exitCode}.");
 
         // Detect newest .dmp file created after cycle start
         DetectAndNotify(cfg, cycleStart);
@@ -122,20 +193,39 @@ public static class ProcDumpMonitorLoop
 
             if (newest != null)
             {
-                Logger.Log("Monitor", $"New dump detected: {newest.FullName} ({newest.Length / 1024.0 / 1024.0:F1} MB)");
+                Logger.Log("Monitor", $"New dump detected: {newest.FullName}. Checking stability…");
 
-                if (cfg.EmailEnabled)
+                // ── Dump stability check (F1) ──
+                bool stable = DumpStabilityChecker.WaitForStableFile(
+                    newest.FullName,
+                    cfg.DumpStabilityTimeoutSeconds,
+                    cfg.DumpStabilityPollSeconds);
+
+                if (!stable)
                 {
-                    try
-                    {
-                        EmailNotifier.SendDumpNotification(cfg, newest.FullName);
-                        Logger.Log("Monitor", "Email notification sent.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Log("Monitor", $"Email send failed: {ex.Message}");
-                    }
+                    Logger.Log("Monitor", "Dump file still locked — skipping notification.");
+                    _health.LastError = "Dump file still locked after timeout — notification suppressed.";
+                    return;
                 }
+
+                _health.LastDumpFileName = newest.Name;
+                _health.TotalDumpCount++;
+
+                Logger.Log("Monitor",
+                    $"Dump stable: {newest.FullName} ({newest.Length / 1024.0 / 1024.0:F1} MB)");
+
+                // ── Deduplication check ──
+                if (_health.LastNotifiedDumpFile == newest.Name)
+                {
+                    Logger.Log("Monitor", "Dump already notified — skipping duplicate notification.");
+                    return;
+                }
+
+                // ── Notify via all enabled channels ──
+                NotifyDumpAll(cfg, newest.FullName);
+
+                _health.LastNotifiedDumpFile = newest.Name;
+                _health.LastNotifiedUtc = DateTime.UtcNow.ToString("O");
             }
             else
             {
@@ -146,5 +236,48 @@ public static class ProcDumpMonitorLoop
         {
             Logger.Log("Monitor", $"Dump detection error: {ex.Message}");
         }
+    }
+
+    // ── Notifier helpers ──
+
+    private static void NotifyDumpAll(Config cfg, string dumpFilePath)
+    {
+        foreach (var notifier in Notifiers)
+        {
+            if (!notifier.IsEnabled(cfg)) continue;
+            try
+            {
+                notifier.NotifyDump(cfg, dumpFilePath);
+                Logger.Log("Monitor", $"{notifier.GetType().Name}: dump notification sent.");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("Monitor", $"{notifier.GetType().Name}: notification failed: {ex.Message}");
+            }
+        }
+    }
+
+    private static void NotifyWarningAll(Config cfg, string subject, string message)
+    {
+        foreach (var notifier in Notifiers)
+        {
+            if (!notifier.IsEnabled(cfg)) continue;
+            try
+            {
+                notifier.NotifyWarning(cfg, subject, message);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("Monitor", $"Warning notification failed ({notifier.GetType().Name}): {ex.Message}");
+            }
+        }
+    }
+
+    private static void WaitBeforeRestart(int delaySeconds)
+    {
+        if (_stopping) return;
+        Logger.Log("Monitor", $"Sleeping {delaySeconds}s before restart…");
+        for (int i = 0; i < delaySeconds * 10 && !_stopping; i++)
+            Thread.Sleep(100);
     }
 }

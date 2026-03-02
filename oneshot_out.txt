@@ -1,0 +1,33 @@
+[15:50:04] Saving config…
+[15:50:04] Creating scheduled task 'ProcDump Monitor SelfTest'…
+[15:50:04] Task 'ProcDump Monitor SelfTest' created.
+[15:50:04] Simulating dump creation…
+[15:50:05] ProcDump exit code: 0
+[15:50:05] Dump file: C:\Users\jraburm\AppData\Local\Temp\ProcDumpMonitor_SelfTest\SelfTest.exe_20260228_155004_simulated.dmp
+[15:50:05] Email skipped (--no-email flag).
+[15:50:05] Removing scheduled task 'ProcDump Monitor SelfTest'…
+[15:50:05] Task removed.
+[15:50:05] One-shot sequence completed successfully.
+---- RESULT ----
+{
+  "Success": true,
+  "TaskName": "ProcDump Monitor SelfTest",
+  "TaskCreated": true,
+  "TaskRemoved": true,
+  "DumpFilePath": "C:\\Users\\jraburm\\AppData\\Local\\Temp\\ProcDumpMonitor_SelfTest\\SelfTest.exe_20260228_155004_simulated.dmp",
+  "EmailSent": false,
+  "Simulated": true,
+  "Error": null,
+  "Steps": [
+    "[15:50:04] Saving config\u2026",
+    "[15:50:04] Creating scheduled task \u0027ProcDump Monitor SelfTest\u0027\u2026",
+    "[15:50:04] Task \u0027ProcDump Monitor SelfTest\u0027 created.",
+    "[15:50:04] Simulating dump creation\u2026",
+    "[15:50:05] ProcDump exit code: 0",
+    "[15:50:05] Dump file: C:\\Users\\jraburm\\AppData\\Local\\Temp\\ProcDumpMonitor_SelfTest\\SelfTest.exe_20260228_155004_simulated.dmp",
+    "[15:50:05] Email skipped (--no-email flag).",
+    "[15:50:05] Removing scheduled task \u0027ProcDump Monitor SelfTest\u0027\u2026",
+    "[15:50:05] Task removed.",
+    "[15:50:05] One-shot sequence completed successfully."
+  ]
+}

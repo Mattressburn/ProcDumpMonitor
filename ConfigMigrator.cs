@@ -1,0 +1,84 @@
+using System.Text.Json;
+
+namespace ProcDumpMonitor;
+
+/// <summary>
+/// Reads raw config JSON, detects version, and applies schema migrations.
+/// V1 configs (no configVersion field) are upgraded to V2 with sensible defaults.
+/// Newer-than-supported versions trigger a downgrade warning.
+/// </summary>
+public static class ConfigMigrator
+{
+    /// <summary>
+    /// True after <see cref="Migrate"/> if the config was created by a newer version.
+    /// Callers (e.g. MainForm) can show a warning dialog.
+    /// </summary>
+    public static bool DowngradeWarning { get; private set; }
+
+    /// <summary>
+    /// Deserialize JSON to <see cref="Config"/>, applying migrations as needed.
+    /// New fields get their property-initializer defaults automatically; this method
+    /// detects the version and stamps it to <see cref="Config.CurrentVersion"/>.
+    /// </summary>
+    public static Config Migrate(string json)
+    {
+        DowngradeWarning = false;
+
+        Config? cfg;
+        try
+        {
+            cfg = JsonSerializer.Deserialize(json, ConfigJsonContext.Default.Config);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("Config", $"Config deserialization failed: {ex.Message}");
+            cfg = null;
+        }
+
+        cfg ??= new Config();
+
+        if (cfg.ConfigVersion == 0)
+        {
+            // V1 config (no configVersion field) → upgrade to V2.
+            // New fields already have safe defaults from property initializers.
+            Logger.Log("Config", "Migrating config from v1 → v2 (adding defaults for new fields).");
+            cfg.ConfigVersion = Config.CurrentVersion;
+        }
+        else if (cfg.ConfigVersion > Config.CurrentVersion)
+        {
+            DowngradeWarning = true;
+            Logger.Log("Config",
+                $"Config version {cfg.ConfigVersion} is newer than supported version {Config.CurrentVersion}. " +
+                "Some settings may be ignored.");
+        }
+        else if (cfg.ConfigVersion < Config.CurrentVersion)
+        {
+            // Future: add V2→V3 migration here.
+            Logger.Log("Config", $"Migrating config from v{cfg.ConfigVersion} → v{Config.CurrentVersion}.");
+            cfg.ConfigVersion = Config.CurrentVersion;
+        }
+
+        return cfg;
+    }
+
+    /// <summary>
+    /// Create a backup of the config file before overwriting with a new version.
+    /// Called by <see cref="Config.Save"/> when a migration has occurred.
+    /// </summary>
+    public static void BackupIfNeeded(string configPath)
+    {
+        try
+        {
+            if (!File.Exists(configPath))
+                return;
+
+            string backupPath = configPath + ".bak";
+            File.Copy(configPath, backupPath, overwrite: true);
+            Logger.Log("Config", $"Backup saved to {backupPath}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("Config", $"Backup failed (non-fatal): {ex.Message}");
+        }
+    }
+}

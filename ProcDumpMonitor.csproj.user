@@ -5,5 +5,32 @@
     <Compile Update="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Update="Pages\AboutPage.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Pages\NotificationsPage.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Pages\ProcDumpPage.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Pages\ReviewPage.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Pages\TargetPage.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="Pages\TaskPage.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Update="StepIndicator.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Update="ThemedCheckBox.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Update="WizardPage.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
   </ItemGroup>
 </Project>

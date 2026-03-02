@@ -27,6 +27,41 @@ public static class ThemeManager
         ApplyRecursive(root);
     }
 
+    /// <summary>Apply the dark theme to a <see cref="ToolStrip"/> and its items.</summary>
+    public static void ApplyTheme(ToolStrip strip)
+    {
+        strip.BackColor = PanelBackground;
+        strip.ForeColor = Foreground;
+        strip.Renderer = new ToolStripProfessionalRenderer(new DarkColorTable());
+        foreach (ToolStripItem item in strip.Items)
+        {
+            item.BackColor = PanelBackground;
+            item.ForeColor = Foreground;
+        }
+    }
+
+    /// <summary>
+    /// Enable the Windows 10/11 dark title bar (build 18985+).
+    /// Falls back silently on older Windows versions.
+    /// </summary>
+    public static void EnableDarkTitleBar(Form form)
+    {
+        try
+        {
+            // DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Windows 10 20H1+)
+            int attribute = 20;
+            int value = 1;
+            DwmSetWindowAttribute(form.Handle, attribute, ref value, sizeof(int));
+        }
+        catch
+        {
+            // Silently fail on older Windows versions
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
     private static void ApplyRecursive(Control control)
     {
         switch (control)
@@ -104,13 +139,20 @@ public static class ThemeManager
                 // Don't override the banner panel — it uses dynamic success/error colours
                 if (pnl.Name == "BannerPanel")
                     break;
-                // ScrollHost needs the background colour, not transparent
-                if (pnl.Name == "ScrollHost")
+                // Don't override the status banner — it uses dynamic success/error colours
+                if (pnl.Name == "StatusBanner")
+                    break;
+                // ScrollHost / WizardContent need the background colour, not transparent
+                if (pnl.Name == "ScrollHost" || pnl.Name == "WizardContent")
                 {
                     pnl.BackColor = Background;
                     break;
                 }
                 pnl.BackColor = Color.Transparent;
+                break;
+
+            case StepIndicator si:
+                si.BackColor = Background;
                 break;
 
             case SplitContainer sc:
@@ -124,5 +166,24 @@ public static class ThemeManager
         {
             ApplyRecursive(child);
         }
+    }
+
+    private sealed class DarkColorTable : ProfessionalColorTable
+    {
+        public override Color MenuItemSelected => Accent;
+        public override Color MenuItemBorder => Border;
+        public override Color MenuBorder => Border;
+        public override Color MenuItemSelectedGradientBegin => Accent;
+        public override Color MenuItemSelectedGradientEnd => Accent;
+        public override Color MenuItemPressedGradientBegin => Accent;
+        public override Color MenuItemPressedGradientEnd => Accent;
+        public override Color MenuStripGradientBegin => PanelBackground;
+        public override Color MenuStripGradientEnd => PanelBackground;
+        public override Color ToolStripDropDownBackground => PanelBackground;
+        public override Color ImageMarginGradientBegin => PanelBackground;
+        public override Color ImageMarginGradientMiddle => PanelBackground;
+        public override Color ImageMarginGradientEnd => PanelBackground;
+        public override Color SeparatorDark => Border;
+        public override Color SeparatorLight => Border;
     }
 }

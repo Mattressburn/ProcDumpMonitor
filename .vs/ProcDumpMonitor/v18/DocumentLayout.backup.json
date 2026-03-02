@@ -1,12 +1,402 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "C:\\Dev\\ProcDumpMonitor\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:mainform.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\wizardpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:wizardpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\stepindicator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:stepindicator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\targetpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\targetpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\procdumppage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\procdumppage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\taskpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\taskpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\notificationspage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\notificationspage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\reviewpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\reviewpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\thememanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:thememanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\procdumpmonitor.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:procdumpmonitor.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\healthwriter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:healthwriter.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\procdumpmonitor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:procdumpmonitor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\oneshotrunner.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:oneshotrunner.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\config.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:config.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\oneshotselftest.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:oneshotselftest.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\tests\\procdumpmonitor.tests\\oneshotrunnertests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:tests\\procdumpmonitor.tests\\oneshotrunnertests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\tests\\procdumpmonitor.tests\\validationtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:tests\\procdumpmonitor.tests\\validationtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\tests\\procdumpmonitor.tests\\configtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:tests\\procdumpmonitor.tests\\configtests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\tests\\procdumpmonitor.tests\\retentionpolicytests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:tests\\procdumpmonitor.tests\\retentionpolicytests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6C6ACE6B-F8CE-4294-9638-F3410E967557}|tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj|c:\\dev\\procdumpmonitor\\tests\\procdumpmonitor.tests\\procdumpmonitor.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{6C6ACE6B-F8CE-4294-9638-F3410E967557}|tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj|solutionrelative:tests\\procdumpmonitor.tests\\procdumpmonitor.tests.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\buildinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:buildinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\aboutpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\aboutpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 12,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 22,
+              "Title": "AboutPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\AboutPage.cs",
+              "RelativeDocumentMoniker": "Pages\\AboutPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\AboutPage.cs",
+              "RelativeToolTip": "Pages\\AboutPage.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAFwAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T22:56:53.192Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 21,
+              "Title": "BuildInfo.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\BuildInfo.cs",
+              "RelativeDocumentMoniker": "BuildInfo.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\BuildInfo.cs",
+              "RelativeToolTip": "BuildInfo.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T22:56:39.476Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 18,
+              "Title": "ConfigTests.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
+              "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
+              "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
+              "ViewState": "AgIAAEMAAAAAAAAAAIBJwFUAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T22:06:17.086Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 17,
+              "Title": "ValidationTests.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
+              "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
+              "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
+              "ViewState": "AgIAAAYAAAAAAAAAAIBJwGEAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T22:06:03.474Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 16,
+              "Title": "OneShotRunnerTests.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\OneShotRunnerTests.cs",
+              "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\OneShotRunnerTests.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\OneShotRunnerTests.cs",
+              "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\OneShotRunnerTests.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAJEAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T22:05:46.472Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 20,
+              "Title": "ProcDumpMonitor.Tests.csproj",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj",
+              "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj",
+              "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj",
+              "ViewState": "AgIAAAQAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-02-28T22:05:15.827Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 15,
+              "Title": "OneShotSelfTest.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\OneShotSelfTest.cs",
+              "RelativeDocumentMoniker": "OneShotSelfTest.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\OneShotSelfTest.cs",
+              "RelativeToolTip": "OneShotSelfTest.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAIsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T20:48:39.643Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 14,
+              "Title": "Program.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Program.cs",
+              "RelativeDocumentMoniker": "Program.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Program.cs",
+              "RelativeToolTip": "Program.cs",
+              "ViewState": "AgIAAFMAAAAAAAAAAABRwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T20:46:53.286Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 13,
+              "Title": "Config.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Config.cs",
+              "RelativeDocumentMoniker": "Config.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Config.cs",
+              "RelativeToolTip": "Config.cs",
+              "ViewState": "AgIAABAAAAAAAAAAAABQwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T20:46:42.05Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 12,
+              "Title": "OneShotRunner.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\OneShotRunner.cs",
+              "RelativeDocumentMoniker": "OneShotRunner.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\OneShotRunner.cs",
+              "RelativeToolTip": "OneShotRunner.cs",
+              "ViewState": "AgIAAAoBAAAAAAAAAIBJwJUBAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T20:46:33.132Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
+              "Title": "ProcDumpMonitor.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ProcDumpMonitor.cs",
+              "RelativeDocumentMoniker": "ProcDumpMonitor.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\ProcDumpMonitor.cs",
+              "RelativeToolTip": "ProcDumpMonitor.cs",
+              "ViewState": "AgIAABcAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T20:37:18.384Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "HealthWriter.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\HealthWriter.cs",
+              "RelativeDocumentMoniker": "HealthWriter.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\HealthWriter.cs",
+              "RelativeToolTip": "HealthWriter.cs",
+              "ViewState": "AgIAAAsAAAAAAAAAAMBawAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T20:37:18.165Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "MainForm.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\MainForm.cs",
+              "RelativeDocumentMoniker": "MainForm.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\MainForm.cs",
+              "RelativeToolTip": "MainForm.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T16:58:51.188Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 19,
+              "Title": "RetentionPolicyTests.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\RetentionPolicyTests.cs",
+              "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\RetentionPolicyTests.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\RetentionPolicyTests.cs",
+              "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\RetentionPolicyTests.cs",
+              "ViewState": "AgIAACoAAAAAAAAAAIBJwFMAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T22:09:11.88Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "ProcDumpMonitor.csproj",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ProcDumpMonitor.csproj",
+              "RelativeDocumentMoniker": "ProcDumpMonitor.csproj",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\ProcDumpMonitor.csproj",
+              "RelativeToolTip": "ProcDumpMonitor.csproj",
+              "ViewState": "AgIAAAoAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2026-02-28T18:44:52.068Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "ThemeManager.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ThemeManager.cs",
+              "RelativeDocumentMoniker": "ThemeManager.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\ThemeManager.cs",
+              "RelativeToolTip": "ThemeManager.cs",
+              "ViewState": "AgIAALsAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:49:39.249Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "ReviewPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\ReviewPage.cs",
+              "RelativeDocumentMoniker": "Pages\\ReviewPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\ReviewPage.cs",
+              "RelativeToolTip": "Pages\\ReviewPage.cs",
+              "ViewState": "AgIAAC0AAAAAAAAAAIBJwLUBAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:49:29.42Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "NotificationsPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\NotificationsPage.cs",
+              "RelativeDocumentMoniker": "Pages\\NotificationsPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\NotificationsPage.cs",
+              "RelativeToolTip": "Pages\\NotificationsPage.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAG8BAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:48:38.469Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "TaskPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\TaskPage.cs",
+              "RelativeDocumentMoniker": "Pages\\TaskPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\TaskPage.cs",
+              "RelativeToolTip": "Pages\\TaskPage.cs",
+              "ViewState": "AgIAAHsAAAAAAAAAAIBJwNgAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:47:44.021Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "ProcDumpPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\ProcDumpPage.cs",
+              "RelativeDocumentMoniker": "Pages\\ProcDumpPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\ProcDumpPage.cs",
+              "RelativeToolTip": "Pages\\ProcDumpPage.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAACwBAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:47:09.528Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "TargetPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\TargetPage.cs",
+              "RelativeDocumentMoniker": "Pages\\TargetPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\TargetPage.cs",
+              "RelativeToolTip": "Pages\\TargetPage.cs",
+              "ViewState": "AgIAAGsAAAAAAAAAAIBJwJAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:46:18.506Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "StepIndicator.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\StepIndicator.cs",
+              "RelativeDocumentMoniker": "StepIndicator.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\StepIndicator.cs",
+              "RelativeToolTip": "StepIndicator.cs",
+              "ViewState": "AgIAACQAAAAAAAAAAABBwJMAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:45:56.274Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "WizardPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\WizardPage.cs",
+              "RelativeDocumentMoniker": "WizardPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\WizardPage.cs",
+              "RelativeToolTip": "WizardPage.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAF8AAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:45:32.426Z"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

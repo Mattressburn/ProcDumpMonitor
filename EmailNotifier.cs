@@ -4,6 +4,18 @@ using System.Net.Sockets;
 
 namespace ProcDumpMonitor;
 
+/// <summary>Adapter that exposes static EmailNotifier methods through the INotifier interface.</summary>
+public class EmailNotifierAdapter : INotifier
+{
+    public bool IsEnabled(Config cfg) => cfg.EmailEnabled;
+
+    public void NotifyDump(Config cfg, string dumpFilePath) =>
+        EmailNotifier.SendDumpNotification(cfg, dumpFilePath);
+
+    public void NotifyWarning(Config cfg, string subject, string message) =>
+        EmailNotifier.SendWarning(cfg, subject, message);
+}
+
 public static class EmailNotifier
 {
     /// <summary>Send a dump-notification email.</summary>
@@ -20,6 +32,12 @@ public static class EmailNotifier
         Send(cfg, subject, body);
     }
 
+    /// <summary>Send a warning email (e.g., low disk space).</summary>
+    public static void SendWarning(Config cfg, string subject, string body)
+    {
+        Send(cfg, subject, body);
+    }
+
     /// <summary>Send a test email.</summary>
     public static void SendTestEmail(Config cfg)
     {
@@ -32,7 +50,9 @@ public static class EmailNotifier
         Send(cfg, subject, body);
     }
 
-    /// <summary>Core send helper.</summary>
+    /// <summary>
+    /// Core send helper. Supports semicolon-delimited To and CC addresses (F5).
+    /// </summary>
     private static void Send(Config cfg, string subject, string body)
     {
 #pragma warning disable CS0618 // SmtpClient is obsolete but fine for simple relay usage
@@ -51,9 +71,57 @@ public static class EmailNotifier
             client.Credentials = null;
         }
 
-        using var msg = new MailMessage(cfg.FromAddress, cfg.ToAddress, subject, body);
+        using var msg = new MailMessage();
+        msg.From = new MailAddress(cfg.FromAddress);
+        msg.Subject = subject;
+        msg.Body = body;
+
+        // Parse semicolon-delimited To addresses
+        foreach (string addr in cfg.ToAddress.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!string.IsNullOrWhiteSpace(addr))
+                msg.To.Add(new MailAddress(addr));
+        }
+
+        // Parse semicolon-delimited CC addresses
+        if (!string.IsNullOrWhiteSpace(cfg.CcAddress))
+        {
+            foreach (string addr in cfg.CcAddress.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!string.IsNullOrWhiteSpace(addr))
+                    msg.CC.Add(new MailAddress(addr));
+            }
+        }
+
         client.Send(msg);
 #pragma warning restore CS0618
+    }
+
+    /// <summary>
+    /// Validate semicolon-delimited email address list.
+    /// Returns (true, "") if all valid, or (false, errorMessage) for the first invalid address.
+    /// </summary>
+    public static (bool Valid, string Error) ValidateAddressList(string addressList, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(addressList))
+            return (false, $"{fieldName} is required.");
+
+        foreach (string raw in addressList.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string addr = raw.Trim();
+            if (string.IsNullOrWhiteSpace(addr) || !addr.Contains('@'))
+                return (false, $"Invalid {fieldName} address: {addr}");
+            try
+            {
+                _ = new MailAddress(addr);
+            }
+            catch
+            {
+                return (false, $"Invalid {fieldName} address: {addr}");
+            }
+        }
+
+        return (true, "");
     }
 
     /// <summary>Validate SMTP connectivity using a raw TCP connection (like Test-NetConnection).</summary>
