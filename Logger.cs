@@ -12,22 +12,13 @@ public static class Logger
     /// <summary>Number of rotated log files to keep (e.g. .1, .2, .3).</summary>
     public static int MaxLogFiles { get; set; } = 5;
 
-    public static string LogDirectory
-    {
-        get
-        {
-            string dir = Path.Combine(AppContext.BaseDirectory, "Logs");
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-            return dir;
-        }
-    }
+    public static string LogDirectory => AppPaths.LogDir;
 
     public static string LogPath
     {
         get
         {
-            _logPath ??= Path.Combine(LogDirectory, "procdump.log");
+            _logPath ??= AppPaths.LogPath;
             return _logPath;
         }
     }

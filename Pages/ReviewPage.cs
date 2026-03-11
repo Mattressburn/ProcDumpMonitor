@@ -28,6 +28,10 @@ public sealed class ReviewPage : WizardPage
     private readonly Button _btnCopyCmd = new() { Text = "Copy ProcDump Cmd", MinimumSize = new Size(130, 34) };
     private readonly Button _btnOpenTaskScheduler = new() { Text = "Open Task Scheduler", MinimumSize = new Size(130, 34) };
 
+    // ── Utilities (convenience shortcuts, not primary owners) ──
+    private readonly Button _btnSupportDiag = new() { Text = "Support Diagnostics...", MinimumSize = new Size(120, 30) };
+    private readonly ToolTip _toolTip = new();
+
     // ── Status banner ──
     private readonly Panel _pnlStatus = new() { Name = "StatusBanner", Dock = DockStyle.Bottom, Height = 36, Padding = new Padding(12, 6, 12, 6) };
     private readonly Label _lblStatus = new() { AutoSize = true, Dock = DockStyle.Left, ForeColor = Color.White };
@@ -53,30 +57,57 @@ public sealed class ReviewPage : WizardPage
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             Margin = Padding.Empty
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        // Row 0 — Summary (fills space)
+        // Row 0 -- Summary (fills space)
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.Controls.Add(_txtSummary, 0, 0);
 
-        // Row 1 — Action buttons
+        // Row 1 -- Action buttons (task and dump controls only)
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var btnFlow = MakeButtonFlow(
             _btnCreateTask, _btnRunNow, _btnStop, _btnRemove, _btnOneShot,
             _btnSaveOnly, _btnOpenDumpFolder, _btnViewLogs, _btnCopyCmd, _btnOpenTaskScheduler);
         layout.Controls.Add(btnFlow, 0, 1);
 
-        // Row 2 — Status banner
+        // Row 2 -- Utilities (convenience shortcuts to features that live elsewhere)
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var utilFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Padding = Padding.Empty,
+            Margin = new Padding(0, 2, 0, 0)
+        };
+        var utilLabel = new Label
+        {
+            Text = "Utilities:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, 7, 4, 0)
+        };
+        utilLabel.Font = new Font(utilLabel.Font.FontFamily, utilLabel.Font.Size - 0.5f, FontStyle.Italic);
+        _btnSupportDiag.Font = new Font(_btnSupportDiag.Font.FontFamily, _btnSupportDiag.Font.Size - 0.5f);
+        _toolTip.SetToolTip(_btnSupportDiag,
+            "Shortcut to Support Diagnostics. This feature is available at any time from Tools or the tray menu.");
+        utilFlow.Controls.Add(utilLabel);
+        utilFlow.Controls.Add(_btnSupportDiag);
+        layout.Controls.Add(utilFlow, 0, 2);
+
+        // Row 3 -- Status banner
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _pnlStatus.Controls.Add(_lblStatus);
-        layout.Controls.Add(_pnlStatus, 0, 2);
+        layout.Controls.Add(_pnlStatus, 0, 3);
 
-        // Row 3 — Log
+        // Row 4 -- Log
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90));
-        layout.Controls.Add(_txtLog, 0, 3);
+        layout.Controls.Add(_txtLog, 0, 4);
 
         Controls.Add(layout);
 
@@ -270,6 +301,13 @@ public sealed class ReviewPage : WizardPage
             try { Process.Start(new ProcessStartInfo("taskschd.msc") { UseShellExecute = true }); }
             catch (Exception ex) { SetStatusBanner("error", $"Cannot open Task Scheduler: {ex.Message}"); }
         };
+
+        _btnSupportDiag.Click += (_, _) =>
+        {
+            // Delegate to MainForm -- diagnostics are not owned by the wizard.
+            if (FindForm() is MainForm main)
+                main.RunSupportDiagnosticsFromGui();
+        };
     }
 
     public override void OnEnter(Config cfg)
@@ -313,6 +351,7 @@ public sealed class ReviewPage : WizardPage
         {
             _pollTimer.Stop();
             _pollTimer.Dispose();
+            _toolTip.Dispose();
         }
         base.Dispose(disposing);
     }
@@ -356,6 +395,7 @@ public sealed class ReviewPage : WizardPage
         sb.AppendLine();
 
         sb.AppendLine("═══ PROCDUMP ═══");
+        sb.AppendLine($"  Scenario:       {(string.IsNullOrEmpty(_cfg.Scenario) ? "Custom" : _cfg.Scenario)}");
         sb.AppendLine($"  Path:           {_cfg.ProcDumpPath}");
         sb.AppendLine($"  Dump Directory: {_cfg.DumpDirectory}");
         sb.AppendLine($"  Dump Type:      {_cfg.DumpType}");
@@ -363,6 +403,17 @@ public sealed class ReviewPage : WizardPage
         sb.AppendLine($"  Max Dumps:      {_cfg.MaxDumps}");
         sb.AppendLine($"  Restart Delay:  {_cfg.RestartDelaySeconds}s");
         sb.AppendLine($"  Min Free Disk:  {_cfg.MinFreeDiskMB} MB");
+
+        // Bitness detection
+        try
+        {
+            string procDumpDir = Path.GetDirectoryName(_cfg.ProcDumpPath) ?? AppPaths.InstallDir;
+            var bitness = ProcDumpBitnessResolver.Resolve(_cfg.TargetName, procDumpDir);
+            sb.AppendLine($"  Bitness:        {bitness.Summary}");
+            if (bitness.Warning != null)
+                sb.AppendLine($"  ⚠ {bitness.Warning}");
+        }
+        catch { sb.AppendLine("  Bitness:        (detection unavailable)"); }
         sb.AppendLine();
 
         sb.AppendLine("═══ SCHEDULED TASK ═══");
@@ -405,11 +456,15 @@ public sealed class ReviewPage : WizardPage
         var parts = new List<string>();
         if (_cfg.DumpOnException) parts.Add("Exception (-e)");
         if (_cfg.DumpOnTerminate) parts.Add("Terminate (-t)");
+        if (_cfg.HangWindowSeconds > 0) parts.Add("Hang (-h)");
         if (_cfg.UseClone) parts.Add("Clone (-r)");
+        if (_cfg.AvoidOutage) parts.Add("Avoid outage (-a)");
         if (_cfg.CpuThreshold > 0) parts.Add($"CPU ≥{_cfg.CpuThreshold}%");
         if (_cfg.CpuLowThreshold > 0) parts.Add($"CPU ≤{_cfg.CpuLowThreshold}%");
+        if (_cfg.CpuDurationSeconds > 0) parts.Add($"Duration {_cfg.CpuDurationSeconds}s");
+        if (_cfg.CpuPerUnit) parts.Add("Per-CPU (-u)");
         if (_cfg.MemoryCommitMB > 0) parts.Add($"Mem ≥{_cfg.MemoryCommitMB} MB");
-        if (_cfg.HangWindowSeconds > 0) parts.Add($"Hang {_cfg.HangWindowSeconds}s");
+        if (_cfg.WerIntegration) parts.Add("WER (-wer)");
         return parts.Count > 0 ? string.Join(", ", parts) : "(none)";
     }
 

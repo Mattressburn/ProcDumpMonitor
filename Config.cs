@@ -32,13 +32,13 @@ public class CliStatusOutput
 
 public class Config
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     // ── Schema version (0 = v1/unversioned; 2 = current) ──
     public int ConfigVersion { get; set; }
 
     // Target
-    public string TargetName { get; set; } = "SoftwareHouse.CrossFire.Server";
+    public string TargetName { get; set; } = "";
 
     // ProcDump
     public string ProcDumpPath { get; set; } = "";
@@ -50,11 +50,29 @@ public class Config
     public int MaxDumps { get; set; } = 1;
     public int RestartDelaySeconds { get; set; } = 5;
 
+    // ── Scenario preset (V3) ──
+    public string Scenario { get; set; } = "";            // "" = Custom/legacy
+
+    // ── Additional operational flags (V3) ──
+    public bool AvoidOutage { get; set; }                  // -a
+    public bool OverwriteExisting { get; set; }            // -o
+    public bool WaitForProcess { get; set; } = true;       // -w (was implicit pre-V3)
+    public bool CpuPerUnit { get; set; }                   // -u
+    public int CpuDurationSeconds { get; set; }            // 0 = off; -s <N>
+
     // ── Advanced ProcDump triggers (F7) ──
     public int CpuThreshold { get; set; }                 // 0 = off; 1-100 → -c <N>
     public int CpuLowThreshold { get; set; }              // 0 = off; 1-100 → -cl <N>
     public int MemoryCommitMB { get; set; }               // 0 = off; → -m <N>
     public int HangWindowSeconds { get; set; }            // 0 = off; >0 → -h
+
+    // ── Advanced options (V3, behind toggle) ──
+    public string PerformanceCounter { get; set; } = "";   // -p <counter>
+    public string PerfCounterThreshold { get; set; } = ""; // -pl <threshold>
+    public string ExceptionFilterInclude { get; set; } = "";// -f <filter>
+    public string ExceptionFilterExclude { get; set; } = "";// -fx <filter>
+    public bool WerIntegration { get; set; }               // -wer
+    public int AvoidTerminateTimeout { get; set; }         // 0 = off; -at <N>
 
     // ── Disk-space guard (F4) ──
     public long MinFreeDiskMB { get; set; } = 5120;       // 5 GB default
@@ -72,15 +90,15 @@ public class Config
     public double DumpRetentionMaxGB { get; set; }         // 0 = disabled
 
     // Task
-    public string TaskName { get; set; } = "ProcDump Monitor - CrossFire";
+    public string TaskName { get; set; } = "ProcDump Monitor";
 
     // ── Email (F5: multi-recipient) ──
-    public bool EmailEnabled { get; set; } = true;
-    public string SmtpServer { get; set; } = "smtp.jci.com";
+    public bool EmailEnabled { get; set; }
+    public string SmtpServer { get; set; } = "";
     public int SmtpPort { get; set; } = 25;
     public bool UseSsl { get; set; } = false;
-    public string FromAddress { get; set; } = "matthew.raburn@jci.com";
-    public string ToAddress { get; set; } = "matthew.raburn@jci.com"; // semicolon-delimited
+    public string FromAddress { get; set; } = "";
+    public string ToAddress { get; set; } = ""; // semicolon-delimited
     public string CcAddress { get; set; } = "";                       // semicolon-delimited
     public string SmtpUsername { get; set; } = "";
     public string EncryptedPasswordBlob { get; set; } = "";           // Base64-encoded DPAPI blob
@@ -128,25 +146,52 @@ public class Config
     {
         var args = new List<string> { "-accepteula" };
 
+        // Dump type
         switch (DumpType)
         {
             case "Full": args.Add("-ma"); break;
             case "MiniPlus": args.Add("-mp"); break;
             case "Mini": args.Add("-mm"); break;
+            case "ThreadDump": args.Add("-mt"); break;
         }
 
+        // Triggers
         if (DumpOnException) args.Add("-e");
         if (DumpOnTerminate) args.Add("-t");
-        if (UseClone) args.Add("-r");
-
-        // Advanced triggers (F7)
-        if (CpuThreshold > 0) args.Add($"-c {CpuThreshold}");
-        if (CpuLowThreshold > 0) args.Add($"-cl {CpuLowThreshold}");
-        if (MemoryCommitMB > 0) args.Add($"-m {MemoryCommitMB}");
         if (HangWindowSeconds > 0) args.Add("-h");
 
+        // Operational
+        if (UseClone) args.Add("-r");
+        if (AvoidOutage) args.Add("-a");
+        if (OverwriteExisting) args.Add("-o");
+
+        // CPU
+        if (CpuThreshold > 0) args.Add($"-c {CpuThreshold}");
+        if (CpuLowThreshold > 0) args.Add($"-cl {CpuLowThreshold}");
+        if (CpuDurationSeconds > 0) args.Add($"-s {CpuDurationSeconds}");
+        if (CpuPerUnit) args.Add("-u");
+
+        // Memory
+        if (MemoryCommitMB > 0) args.Add($"-m {MemoryCommitMB}");
+
+        // Advanced
+        if (!string.IsNullOrWhiteSpace(PerformanceCounter))
+            args.Add($"-p \"{PerformanceCounter}\"");
+        if (!string.IsNullOrWhiteSpace(PerfCounterThreshold))
+            args.Add($"-pl \"{PerfCounterThreshold}\"");
+        if (!string.IsNullOrWhiteSpace(ExceptionFilterInclude))
+            args.Add($"-f \"{ExceptionFilterInclude}\"");
+        if (!string.IsNullOrWhiteSpace(ExceptionFilterExclude))
+            args.Add($"-fx \"{ExceptionFilterExclude}\"");
+        if (WerIntegration) args.Add("-wer");
+        if (AvoidTerminateTimeout > 0) args.Add($"-at {AvoidTerminateTimeout}");
+
+        // Count
         args.Add($"-n {MaxDumps}");
-        args.Add($"-w {TargetName}");
+
+        // Target
+        if (WaitForProcess) args.Add("-w");
+        args.Add(TargetName);
         args.Add($"\"{DumpDirectory}\"");
 
         return string.Join(" ", args);
@@ -154,14 +199,7 @@ public class Config
 
     // ----- persistence -----
 
-    public static string DefaultConfigPath
-    {
-        get
-        {
-            string exeDir = AppContext.BaseDirectory;
-            return Path.Combine(exeDir, "config.json");
-        }
-    }
+    public static string DefaultConfigPath => AppPaths.ConfigPath;
 
     public void Save(string? path = null)
     {
@@ -181,7 +219,7 @@ public class Config
     {
         path ??= DefaultConfigPath;
         if (!File.Exists(path))
-            return new Config { ConfigVersion = CurrentVersion };
+            return new Config { ConfigVersion = CurrentVersion, Scenario = "Crash capture" };
         try
         {
             string json = File.ReadAllText(path);
@@ -189,7 +227,7 @@ public class Config
         }
         catch
         {
-            return new Config { ConfigVersion = CurrentVersion };
+            return new Config { ConfigVersion = CurrentVersion, Scenario = "Crash capture" };
         }
     }
 }

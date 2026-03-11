@@ -12,10 +12,10 @@ public static class ProcDumpMonitorLoop
 {
     private static volatile bool _stopping;
 
-    // ── Notifier pipeline ──
+    // Notifier pipeline
     private static readonly INotifier[] Notifiers = { new EmailNotifierAdapter(), new WebhookNotifier() };
 
-    // ── Persistent state across cycles ──
+    // Persistent state across cycles
     private static HealthStatus _health = new();
     private static DateTime _lastLowDiskNotifyUtc = DateTime.MinValue;
 
@@ -34,6 +34,31 @@ public static class ProcDumpMonitorLoop
 
         Logger.Log("Monitor", "ProcDump Monitor started.");
         Logger.Log("Monitor", $"Target: {cfg.TargetName}");
+
+        // ── Bitness-based binary resolution ──
+        try
+        {
+            string procDumpDir = Path.GetDirectoryName(cfg.ProcDumpPath) ?? AppPaths.InstallDir;
+            var bitnessResult = ProcDumpBitnessResolver.Resolve(cfg.TargetName, procDumpDir);
+            Logger.Log("Monitor", $"Bitness: {bitnessResult.Summary}");
+
+            if (!string.IsNullOrEmpty(bitnessResult.ActualBinary) && File.Exists(bitnessResult.ActualBinary))
+            {
+                if (!bitnessResult.ActualBinary.Equals(cfg.ProcDumpPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    Logger.Log("Monitor", $"Switching ProcDump binary: {cfg.ProcDumpPath} → {bitnessResult.ActualBinary}");
+                    cfg.ProcDumpPath = bitnessResult.ActualBinary;
+                }
+            }
+
+            if (bitnessResult.Warning != null)
+                Logger.Log("Monitor", $"Bitness WARNING: {bitnessResult.Warning}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("Monitor", $"Bitness detection failed (non-fatal): {ex.Message}");
+        }
+
         Logger.Log("Monitor", $"ProcDump: {cfg.ProcDumpPath}");
         Logger.Log("Monitor", $"DumpDir: {cfg.DumpDirectory}");
         Logger.Log("Monitor", $"Args: {cfg.BuildProcDumpArgs()}");
@@ -56,6 +81,8 @@ public static class ProcDumpMonitorLoop
             Logger.Log("Monitor", "Stop signal received.");
         };
 
+        using var notifyQueue = new NotificationQueue();
+
         while (!_stopping)
         {
             DateTime cycleStart = DateTime.UtcNow;
@@ -67,7 +94,7 @@ public static class ProcDumpMonitorLoop
 
             try
             {
-                // ── Disk-space guard (F4) ──
+                // Disk-space guard
                 if (cfg.MinFreeDiskMB > 0)
                 {
                     var (ok, freeMB) = DiskSpaceGuard.CheckFreeSpace(cfg.DumpDirectory, cfg.MinFreeDiskMB);
@@ -76,14 +103,14 @@ public static class ProcDumpMonitorLoop
 
                     if (!ok)
                     {
-                        string warnMsg = $"Skipping cycle — only {freeMB} MB free on {Path.GetPathRoot(cfg.DumpDirectory)} (threshold: {cfg.MinFreeDiskMB} MB)";
+                        string warnMsg = $"Skipping cycle -- only {freeMB} MB free on {Path.GetPathRoot(cfg.DumpDirectory)} (threshold: {cfg.MinFreeDiskMB} MB)";
                         Logger.Log("Monitor", warnMsg);
 
                         // Rate-limited low-disk notification (once per hour)
                         if ((DateTime.UtcNow - _lastLowDiskNotifyUtc).TotalHours >= 1)
                         {
                             _lastLowDiskNotifyUtc = DateTime.UtcNow;
-                            NotifyWarningAll(cfg,
+                            notifyQueue.EnqueueWarning(cfg, Notifiers,
                                 $"[ProcDump] Low disk warning on {Environment.MachineName}",
                                 warnMsg);
                         }
@@ -95,11 +122,11 @@ public static class ProcDumpMonitorLoop
                     }
                 }
 
-                // ── Dump retention / auto-cleanup (F9) ──
+                // Dump retention / auto-cleanup
                 RetentionPolicy.Apply(cfg.DumpDirectory, cfg.DumpRetentionDays, cfg.DumpRetentionMaxGB);
 
-                // ── Launch ProcDump cycle ──
-                RunProcDumpCycle(cfg, cycleStart);
+                // Launch ProcDump cycle
+                RunProcDumpCycle(cfg, cycleStart, notifyQueue);
             }
             catch (Exception ex)
             {
@@ -118,7 +145,7 @@ public static class ProcDumpMonitorLoop
         Logger.Log("Monitor", "ProcDump Monitor stopped.");
     }
 
-    private static void RunProcDumpCycle(Config cfg, DateTime cycleStart)
+    private static void RunProcDumpCycle(Config cfg, DateTime cycleStart, NotificationQueue notifyQueue)
     {
         var psi = new ProcessStartInfo
         {
@@ -175,10 +202,10 @@ public static class ProcDumpMonitorLoop
         Logger.Log("Monitor", $"ProcDump exited with code {exitCode}.");
 
         // Detect newest .dmp file created after cycle start
-        DetectAndNotify(cfg, cycleStart);
+        DetectAndNotify(cfg, cycleStart, notifyQueue);
     }
 
-    private static void DetectAndNotify(Config cfg, DateTime cycleStart)
+    private static void DetectAndNotify(Config cfg, DateTime cycleStart, NotificationQueue notifyQueue)
     {
         try
         {
@@ -221,8 +248,8 @@ public static class ProcDumpMonitorLoop
                     return;
                 }
 
-                // ── Notify via all enabled channels ──
-                NotifyDumpAll(cfg, newest.FullName);
+                // Notify via all enabled channels (non-blocking)
+                notifyQueue.EnqueueDump(cfg, Notifiers, newest.FullName);
 
                 _health.LastNotifiedDumpFile = newest.Name;
                 _health.LastNotifiedUtc = DateTime.UtcNow.ToString("O");
@@ -235,41 +262,6 @@ public static class ProcDumpMonitorLoop
         catch (Exception ex)
         {
             Logger.Log("Monitor", $"Dump detection error: {ex.Message}");
-        }
-    }
-
-    // ── Notifier helpers ──
-
-    private static void NotifyDumpAll(Config cfg, string dumpFilePath)
-    {
-        foreach (var notifier in Notifiers)
-        {
-            if (!notifier.IsEnabled(cfg)) continue;
-            try
-            {
-                notifier.NotifyDump(cfg, dumpFilePath);
-                Logger.Log("Monitor", $"{notifier.GetType().Name}: dump notification sent.");
-            }
-            catch (Exception ex)
-            {
-                Logger.Log("Monitor", $"{notifier.GetType().Name}: notification failed: {ex.Message}");
-            }
-        }
-    }
-
-    private static void NotifyWarningAll(Config cfg, string subject, string message)
-    {
-        foreach (var notifier in Notifiers)
-        {
-            if (!notifier.IsEnabled(cfg)) continue;
-            try
-            {
-                notifier.NotifyWarning(cfg, subject, message);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log("Monitor", $"Warning notification failed ({notifier.GetType().Name}): {ex.Message}");
-            }
         }
     }
 

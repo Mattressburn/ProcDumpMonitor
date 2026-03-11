@@ -38,9 +38,9 @@ public static class TaskSchedulerService
         if (!File.Exists(exePath))
             throw new FileNotFoundException($"Executable not found: {exePath}");
 
-        string configPath = Config.DefaultConfigPath;
+        string configPath = AppPaths.ConfigPath;
         string arguments = $"--monitor --config \"{configPath}\"";
-        string workDir = AppContext.BaseDirectory;
+        string workDir = AppPaths.InstallDir;
 
         Logger.Log("TaskSvc", $"InstallOrUpdate: taskName={taskName}");
         Logger.Log("TaskSvc", $"  exePath={exePath}");
@@ -173,19 +173,11 @@ public static class TaskSchedulerService
     {
         return new TaskActionPreview
         {
-            ExePath = GetExePath(),
-            Arguments = $"--monitor --config \"{Config.DefaultConfigPath}\"",
-            WorkingDirectory = AppContext.BaseDirectory
+            ExePath = AppPaths.ExePath,
+            Arguments = $"--monitor --config \"{AppPaths.ConfigPath}\"",
+            WorkingDirectory = AppPaths.InstallDir
         };
     }
 
-    private static string GetExePath()
-    {
-        // Works for both single-file and normal publish
-        string? path = Environment.ProcessPath;
-        if (!string.IsNullOrEmpty(path))
-            return path;
-
-        return Path.Combine(AppContext.BaseDirectory, "ProcDumpMonitor.exe");
-    }
+    private static string GetExePath() => AppPaths.ExePath;
 }

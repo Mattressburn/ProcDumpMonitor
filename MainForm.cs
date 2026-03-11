@@ -20,6 +20,9 @@ public class MainForm : Form
     private readonly Button _btnExportConfig = new() { Text = "Export…", AutoSize = true, MinimumSize = new Size(80, 34) };
     private readonly Button _btnImportConfig = new() { Text = "Import…", AutoSize = true, MinimumSize = new Size(80, 34) };
 
+    // ── Menu bar ──
+    private readonly MenuStrip _menuStrip = new();
+
     // ── System tray ──
     private readonly NotifyIcon _trayIcon = new();
     private readonly ContextMenuStrip _trayMenu = new();
@@ -41,6 +44,7 @@ public class MainForm : Form
         _cfg = Config.Load();
 
         BuildLayout();
+        BuildMenu();
         WireEvents();
         CheckElevation();
         LoadIcon();
@@ -53,6 +57,7 @@ public class MainForm : Form
         _trayIcon.Text = "ProcDump Monitor";
         _trayIcon.Visible = false;
         _trayMenu.Items.Add("Open", null, (_, _) => RestoreFromTray());
+        _trayMenu.Items.Add("Create Support Bundle", null, (_, _) => RunSupportDiagnosticsFromGui());
         _trayMenu.Items.Add("-");
         _trayMenu.Items.Add("Exit", null, (_, _) => { _trayIcon.Visible = false; Application.Exit(); });
         _trayIcon.ContextMenuStrip = _trayMenu;
@@ -315,6 +320,91 @@ public class MainForm : Form
     {
         foreach (var page in _pages)
             page.OnLeave(_cfg);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Menu
+    // ═══════════════════════════════════════════════════════════════
+
+    private void BuildMenu()
+    {
+        var toolsMenu = new ToolStripMenuItem("&Tools");
+        var diagItem = new ToolStripMenuItem("Support Diagnostics…");
+        diagItem.Click += (_, _) => RunSupportDiagnosticsFromGui();
+        toolsMenu.DropDownItems.Add(diagItem);
+
+        _menuStrip.Items.Add(toolsMenu);
+        _menuStrip.Dock = DockStyle.Top;
+        MainMenuStrip = _menuStrip;
+        Controls.Add(_menuStrip);
+    }
+
+    internal async void RunSupportDiagnosticsFromGui()
+    {
+        if (!SupportDiagnosticsService.IsElevated())
+        {
+            var result = MessageBox.Show(
+                "Support Diagnostics requires Administrator privileges.\n\n" +
+                "Relaunch elevated to create the support bundle?",
+                "Elevation Required",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+
+            if (result == DialogResult.Yes)
+            {
+                if (SupportDiagnosticsService.RelaunchElevatedForDiagnostics())
+                    Application.Exit();
+            }
+            return;
+        }
+
+        // Show a progress dialog-style approach using the cursor and a message
+        Cursor = Cursors.WaitCursor;
+        Enabled = false;
+        string? zipPath = null;
+        string? error = null;
+
+        try
+        {
+            zipPath = await Task.Run(() =>
+                SupportDiagnosticsService.CreateBundle(progress: msg =>
+                    Logger.Log("Diagnostics", msg)));
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
+            Enabled = true;
+        }
+
+        if (zipPath != null)
+        {
+            var dlgResult = MessageBox.Show(
+                $"Support bundle created:\n\n{zipPath}\n\nOpen containing folder?",
+                "Support Diagnostics",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information);
+
+            if (dlgResult == DialogResult.Yes)
+            {
+                try
+                {
+                    Process.Start("explorer.exe", $"/select,\"{zipPath}\"");
+                }
+                catch { /* best effort */ }
+            }
+        }
+        else
+        {
+            MessageBox.Show(
+                $"Failed to create support bundle:\n\n{error}",
+                "Support Diagnostics",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════

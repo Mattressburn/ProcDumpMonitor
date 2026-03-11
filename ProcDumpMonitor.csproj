@@ -62,13 +62,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.7.1.1" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
     <PackageReference Include="TaskScheduler" Version="2.12.2" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\jci_globe.ico" LogicalName="ProcDumpMonitor.jci_globe.ico" />
-    <EmbeddedResource Include="Assets\logo.png" LogicalName="ProcDumpMonitor.logo.png" Condition="Exists('Assets\logo.png')" />
+    <EmbeddedResource Include="Assets\jci_globe_256.png" LogicalName="ProcDumpMonitor.jci_globe_256.png" />
   </ItemGroup>
 
   <ItemGroup>

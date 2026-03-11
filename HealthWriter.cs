@@ -38,8 +38,7 @@ public static class HealthWriter
 {
     private static readonly object Lock = new();
 
-    public static string HealthPath =>
-        Path.Combine(AppContext.BaseDirectory, "health.json");
+    public static string HealthPath => AppPaths.HealthPath;
 
     /// <summary>Write health status atomically (temp file + replace).</summary>
     public static void Write(HealthStatus status)

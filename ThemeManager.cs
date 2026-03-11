@@ -32,11 +32,27 @@ public static class ThemeManager
     {
         strip.BackColor = PanelBackground;
         strip.ForeColor = Foreground;
-        strip.Renderer = new ToolStripProfessionalRenderer(new DarkColorTable());
-        foreach (ToolStripItem item in strip.Items)
+        strip.Renderer = new ToolStripProfessionalRenderer(new DarkColorTable())
+        {
+            RoundedEdges = false
+        };
+        ApplyToolStripItems(strip.Items);
+    }
+
+    /// <summary>Recursively theme all items in a ToolStrip, including nested dropdown menus.</summary>
+    private static void ApplyToolStripItems(ToolStripItemCollection items)
+    {
+        foreach (ToolStripItem item in items)
         {
             item.BackColor = PanelBackground;
             item.ForeColor = Foreground;
+
+            if (item is ToolStripMenuItem menuItem && menuItem.HasDropDown)
+            {
+                menuItem.DropDown.BackColor = PanelBackground;
+                menuItem.DropDown.ForeColor = Foreground;
+                ApplyToolStripItems(menuItem.DropDownItems);
+            }
         }
     }
 
@@ -160,6 +176,11 @@ public static class ThemeManager
                 sc.Panel1.BackColor = Background;
                 sc.Panel2.BackColor = Background;
                 break;
+
+            case ToolStrip ts:
+                // Theme any MenuStrip or ToolStrip found in the control tree
+                ApplyTheme(ts);
+                break;
         }
 
         foreach (Control child in control.Controls)
@@ -170,20 +191,77 @@ public static class ThemeManager
 
     private sealed class DarkColorTable : ProfessionalColorTable
     {
-        public override Color MenuItemSelected => Accent;
-        public override Color MenuItemBorder => Border;
-        public override Color MenuBorder => Border;
-        public override Color MenuItemSelectedGradientBegin => Accent;
-        public override Color MenuItemSelectedGradientEnd => Accent;
-        public override Color MenuItemPressedGradientBegin => Accent;
-        public override Color MenuItemPressedGradientEnd => Accent;
+        // Top-level menu strip background
         public override Color MenuStripGradientBegin => PanelBackground;
         public override Color MenuStripGradientEnd => PanelBackground;
+
+        // Hover / selection highlight on menu items
+        public override Color MenuItemSelected => Accent;
+        public override Color MenuItemBorder => Border;
+        public override Color MenuItemSelectedGradientBegin => Accent;
+        public override Color MenuItemSelectedGradientEnd => Accent;
+        public override Color MenuItemPressedGradientBegin => PanelBackground;
+        public override Color MenuItemPressedGradientEnd => PanelBackground;
+
+        // Dropdown background and image margin (gutter)
         public override Color ToolStripDropDownBackground => PanelBackground;
         public override Color ImageMarginGradientBegin => PanelBackground;
         public override Color ImageMarginGradientMiddle => PanelBackground;
         public override Color ImageMarginGradientEnd => PanelBackground;
+
+        // Dropdown border
+        public override Color MenuBorder => Border;
+
+        // Separators
         public override Color SeparatorDark => Border;
         public override Color SeparatorLight => Border;
+
+        // Check mark background (checked menu items)
+        public override Color CheckBackground => Accent;
+        public override Color CheckSelectedBackground => ControlPaint.Light(Accent, 0.15f);
+        public override Color CheckPressedBackground => ControlPaint.Dark(Accent, 0.15f);
+
+        // ToolStrip content panel (hosted controls area)
+        public override Color ToolStripContentPanelGradientBegin => Background;
+        public override Color ToolStripContentPanelGradientEnd => Background;
+
+        // ToolStrip panel / status strip gradients
+        public override Color ToolStripPanelGradientBegin => PanelBackground;
+        public override Color ToolStripPanelGradientEnd => PanelBackground;
+        public override Color StatusStripGradientBegin => PanelBackground;
+        public override Color StatusStripGradientEnd => PanelBackground;
+
+        // Standard toolbar gradient
+        public override Color ToolStripGradientBegin => PanelBackground;
+        public override Color ToolStripGradientMiddle => PanelBackground;
+        public override Color ToolStripGradientEnd => PanelBackground;
+
+        // Overflow button
+        public override Color OverflowButtonGradientBegin => PanelBackground;
+        public override Color OverflowButtonGradientMiddle => PanelBackground;
+        public override Color OverflowButtonGradientEnd => PanelBackground;
+
+        // Grip (drag handle)
+        public override Color GripDark => Border;
+        public override Color GripLight => PanelBackground;
+
+        // Button states
+        public override Color ButtonSelectedHighlight => Accent;
+        public override Color ButtonSelectedHighlightBorder => Border;
+        public override Color ButtonPressedHighlight => ControlPaint.Dark(Accent, 0.15f);
+        public override Color ButtonPressedHighlightBorder => Border;
+        public override Color ButtonCheckedHighlight => Accent;
+        public override Color ButtonCheckedHighlightBorder => Border;
+        public override Color ButtonSelectedBorder => Border;
+        public override Color ButtonSelectedGradientBegin => Accent;
+        public override Color ButtonSelectedGradientEnd => Accent;
+        public override Color ButtonPressedGradientBegin => ControlPaint.Dark(Accent, 0.15f);
+        public override Color ButtonPressedGradientEnd => ControlPaint.Dark(Accent, 0.15f);
+        public override Color ButtonCheckedGradientBegin => Accent;
+        public override Color ButtonCheckedGradientEnd => Accent;
+
+        // Rafting container
+        public override Color RaftingContainerGradientBegin => Background;
+        public override Color RaftingContainerGradientEnd => Background;
     }
 }

@@ -4,10 +4,47 @@ namespace ProcDumpMonitor;
 
 internal static class Program
 {
+    // CLI verbs that require Administrator privileges.
+    private static readonly string[] CliVerbs =
+    [
+        "--monitor", "--oneshot", "--install", "--update",
+        "--uninstall", "--start", "--stop", "--status",
+        "--support-diagnostics", "--selftest"
+    ];
+
     [STAThread]
     static void Main(string[] args)
     {
-        // ── No arguments → GUI mode ──
+        bool noElevate = HasFlag(args, "--no-elevate");
+
+        // Strip --no-elevate from the args so downstream code never sees it.
+        if (noElevate)
+            args = args.Where(a => !a.Equals("--no-elevate", StringComparison.OrdinalIgnoreCase)).ToArray();
+
+        if (!noElevate && !ElevationHelper.IsElevated())
+        {
+            if (args.Length == 0)
+            {
+                // GUI launch: silently elevate via UAC prompt.
+                if (ElevationHelper.RelaunchElevated(args))
+                {
+                    // Elevated process started; exit the non-elevated instance.
+                    return;
+                }
+                // User cancelled UAC; exit cleanly.
+                return;
+            }
+
+            // CLI launch: do not silently relaunch.
+            if (args.Any(a => CliVerbs.Contains(a, StringComparer.OrdinalIgnoreCase)))
+            {
+                Console.Error.WriteLine("ERROR: This command requires Administrator privileges.");
+                Console.Error.WriteLine("Re-run from an elevated (Administrator) prompt, or add --no-elevate to skip.");
+                Environment.Exit(1);
+            }
+        }
+
+        // ── No arguments: GUI mode ──
         if (args.Length == 0)
         {
             ApplicationConfiguration.Initialize();
@@ -38,6 +75,36 @@ internal static class Program
         {
             Console.WriteLine(typeof(Program).Assembly.GetName().Version?.ToString() ?? "1.0.0");
             Environment.Exit(0);
+        }
+
+        // --support-diagnostics [--since <ISO8601>] [--until <ISO8601>]
+        if (HasFlag(args, "--support-diagnostics"))
+        {
+            if (!SupportDiagnosticsService.IsElevated())
+            {
+                Console.Error.WriteLine("ERROR: --support-diagnostics requires Administrator privileges.");
+                Console.Error.WriteLine("Re-run this command from an elevated (Administrator) prompt.");
+                Environment.Exit(1);
+            }
+
+            try
+            {
+                DateTime? since = null, until = null;
+                string? sinceStr = GetArgValue(args, "--since");
+                string? untilStr = GetArgValue(args, "--until");
+                if (sinceStr != null) since = DateTime.Parse(sinceStr, null, System.Globalization.DateTimeStyles.RoundtripKind);
+                if (untilStr != null) until = DateTime.Parse(untilStr, null, System.Globalization.DateTimeStyles.RoundtripKind);
+
+                Console.WriteLine("Creating support diagnostics bundle…");
+                string zipPath = SupportDiagnosticsService.CreateBundle(since, until, msg => Console.WriteLine($"  {msg}"));
+                Console.WriteLine($"Bundle created: {zipPath}");
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Diagnostics failed: {ex.Message}");
+                Environment.Exit(1);
+            }
         }
 
         // --selftest
@@ -277,12 +344,18 @@ internal static class Program
             Status:
               --status    [--config <p>]  Print task status as JSON to stdout; exit 0.
 
+            Diagnostics:
+              --support-diagnostics       Create a support bundle ZIP (requires elevation).
+              --since <ISO8601>           Start of time range (default: 24 hours ago).
+              --until <ISO8601>           End of time range (default: now).
+
             Export:
               --export-config <out>       Export config with secrets redacted.
 
             Miscellaneous:
               --help, -h                  Print this help text and exit.
               --version                   Print assembly version and exit.
+              --no-elevate                Skip automatic UAC elevation (debug/CI).
 
             Exit Codes:
               0  Success

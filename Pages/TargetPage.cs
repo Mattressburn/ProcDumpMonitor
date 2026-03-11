@@ -2,24 +2,24 @@ using System.ServiceProcess;
 
 namespace ProcDumpMonitor;
 
-/// <summary>Wizard Step 1 — Target process selection.</summary>
+/// <summary>Wizard Step 1 -- Target process selection.</summary>
 public sealed class TargetPage : WizardPage
 {
     public override string StepTitle => "Target";
 
     private readonly Label _lblInstruction = new()
     {
-        Text = "Enter the process name to monitor, or select a running Windows service.",
+        Text = "Select a Windows service from the dropdown, or type a process name manually.",
         AutoSize = true,
         Margin = new Padding(0, 0, 0, 16)
     };
 
-    private readonly TextBox _txtTarget = new() { Dock = DockStyle.Top, PlaceholderText = "e.g. SoftwareHouse.CrossFire.Server" };
+    private readonly TextBox _txtTarget = new() { Dock = DockStyle.Top, PlaceholderText = "e.g. MyService or notepad" };
     private readonly Label _lblValidation;
 
     private readonly Label _lblDivider = new()
     {
-        Text = "— OR select a running service —",
+        Text = "-- OR select a service --",
         AutoSize = true,
         ForeColor = Color.Gray,
         TextAlign = ContentAlignment.MiddleCenter,
@@ -27,13 +27,22 @@ public sealed class TargetPage : WizardPage
         Margin = new Padding(0, 20, 0, 8)
     };
 
-    private readonly ComboBox _cboService = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
-    private readonly Button _btnRefresh = new() { Text = "↻ Refresh Services", AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
+    private readonly ComboBox _cboService = new() { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDown };
+    private readonly Button _btnRefresh = new() { Text = "Refresh Services", AutoSize = true, Margin = new Padding(0, 8, 0, 0) };
+    private readonly Label _lblServiceInfo;
+    private readonly ThemedCheckBox _chkShowAll = new() { Text = "Show all services (including stopped)", AutoSize = true, Margin = new Padding(0, 4, 0, 0) };
 
     public TargetPage()
     {
         _lblValidation = MakeValidationLabel();
         _lblValidation.Text = "Process name is required.";
+        _lblServiceInfo = new Label
+        {
+            AutoSize = true,
+            ForeColor = Color.Gray,
+            Visible = false,
+            Margin = new Padding(0, 4, 0, 0)
+        };
 
         var layout = new TableLayoutPanel
         {
@@ -63,13 +72,28 @@ public sealed class TargetPage : WizardPage
         layout.Controls.Add(_lblDivider, 0, r++);
 
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(MakeLabel("Select Running Service"), 0, r++);
+        layout.Controls.Add(MakeLabel("Select Service"), 0, r++);
 
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(_cboService, 0, r++);
 
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(_btnRefresh, 0, r++);
+        layout.Controls.Add(_lblServiceInfo, 0, r++);
+
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var btnFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 4, 0, 0),
+            Padding = Padding.Empty
+        };
+        btnFlow.Controls.Add(_btnRefresh);
+        btnFlow.Controls.Add(_chkShowAll);
+        layout.Controls.Add(btnFlow, 0, r++);
 
         layout.RowCount = r;
         Controls.Add(layout);
@@ -83,10 +107,35 @@ public sealed class TargetPage : WizardPage
         _cboService.SelectedIndexChanged += (_, _) =>
         {
             if (_cboService.SelectedItem is ServiceItem svc && !string.IsNullOrEmpty(svc.ServiceName))
+            {
                 _txtTarget.Text = svc.ServiceName;
+                _lblServiceInfo.Text = $"Service: {svc.DisplayName} ({svc.ServiceName})";
+                _lblServiceInfo.Visible = true;
+            }
+            else
+            {
+                _lblServiceInfo.Visible = false;
+            }
+        };
+
+        // Also handle the user typing in the ComboBox (DropDown mode)
+        _cboService.TextChanged += (_, _) =>
+        {
+            // If the typed text does not match a dropdown item, treat it as manual entry
+            if (_cboService.SelectedItem is not ServiceItem)
+            {
+                string text = _cboService.Text.Trim();
+                if (!string.IsNullOrEmpty(text))
+                {
+                    _txtTarget.Text = text;
+                    _lblServiceInfo.Text = "(manual entry)";
+                    _lblServiceInfo.Visible = true;
+                }
+            }
         };
 
         _btnRefresh.Click += (_, _) => PopulateServices();
+        _chkShowAll.CheckedChanged += (_, _) => PopulateServices();
     }
 
     public override void OnEnter(Config cfg)
@@ -111,15 +160,21 @@ public sealed class TargetPage : WizardPage
         {
             var previous = _cboService.SelectedItem as ServiceItem;
             _cboService.Items.Clear();
-            _cboService.Items.Add(new ServiceItem("", "(none — type name manually)"));
+            _cboService.Items.Add(new ServiceItem("", "(none -- type name manually)"));
 
             controllers = ServiceController.GetServices();
-            var services = controllers
-                .Where(s => s.Status == ServiceControllerStatus.Running)
-                .OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var svc in services)
-                _cboService.Items.Add(new ServiceItem(svc.ServiceName, svc.DisplayName));
+            var filtered = _chkShowAll.Checked
+                ? controllers.OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase)
+                : controllers
+                    .Where(s => s.Status == ServiceControllerStatus.Running)
+                    .OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var svc in filtered)
+            {
+                string suffix = _chkShowAll.Checked ? $" [{svc.Status}]" : "";
+                _cboService.Items.Add(new ServiceItem(svc.ServiceName, $"{svc.DisplayName}{suffix}"));
+            }
 
             int idx = 0;
             if (previous != null && !string.IsNullOrEmpty(previous.ServiceName))
@@ -133,7 +188,11 @@ public sealed class TargetPage : WizardPage
             }
             _cboService.SelectedIndex = idx;
         }
-        catch { /* Best-effort; service enumeration may fail without admin. */ }
+        catch (Exception ex)
+        {
+            _lblServiceInfo.Text = $"Could not enumerate services: {ex.Message}";
+            _lblServiceInfo.Visible = true;
+        }
         finally
         {
             if (controllers != null)

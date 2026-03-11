@@ -53,10 +53,22 @@ public static class ConfigMigrator
         }
         else if (cfg.ConfigVersion < Config.CurrentVersion)
         {
-            // Future: add V2→V3 migration here.
+            // V2→V3: new fields use property-initializer defaults.
+            // WaitForProcess=true matches V2 behavior (always added -w).
             Logger.Log("Config", $"Migrating config from v{cfg.ConfigVersion} → v{Config.CurrentVersion}.");
+
+            // V2 configs always added -w, so ensure it stays true
+            if (cfg.ConfigVersion <= 2)
+                cfg.WaitForProcess = true;
+
             cfg.ConfigVersion = Config.CurrentVersion;
         }
+
+        // Ensure a scenario is always set — "Crash capture" is the safe default.
+        // Legacy configs (V1/V2) and imported configs with missing scenario data
+        // should never default to "Custom".
+        if (string.IsNullOrEmpty(cfg.Scenario))
+            cfg.Scenario = "Crash capture";
 
         return cfg;
     }

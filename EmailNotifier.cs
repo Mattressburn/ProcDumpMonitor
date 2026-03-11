@@ -1,6 +1,8 @@
 using System.Net;
-using System.Net.Mail;
 using System.Net.Sockets;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 
 namespace ProcDumpMonitor;
 
@@ -51,36 +53,19 @@ public static class EmailNotifier
     }
 
     /// <summary>
-    /// Core send helper. Supports semicolon-delimited To and CC addresses (F5).
+    /// Core send helper using MailKit. Supports semicolon-delimited To and CC addresses,
+    /// optional TLS, anonymous relay, and basic AUTH LOGIN/PLAIN.
     /// </summary>
     private static void Send(Config cfg, string subject, string body)
     {
-#pragma warning disable CS0618 // SmtpClient is obsolete but fine for simple relay usage
-        using var client = new SmtpClient(cfg.SmtpServer, cfg.SmtpPort);
-        client.EnableSsl = cfg.UseSsl;
-        client.Timeout = 30_000;
-
-        if (!string.IsNullOrWhiteSpace(cfg.SmtpUsername))
-        {
-            string password = cfg.GetPassword();
-            client.Credentials = new NetworkCredential(cfg.SmtpUsername, password);
-        }
-        else
-        {
-            client.UseDefaultCredentials = false;
-            client.Credentials = null;
-        }
-
-        using var msg = new MailMessage();
-        msg.From = new MailAddress(cfg.FromAddress);
-        msg.Subject = subject;
-        msg.Body = body;
+        var message = new MimeMessage();
+        message.From.Add(MailboxAddress.Parse(cfg.FromAddress));
 
         // Parse semicolon-delimited To addresses
         foreach (string addr in cfg.ToAddress.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             if (!string.IsNullOrWhiteSpace(addr))
-                msg.To.Add(new MailAddress(addr));
+                message.To.Add(MailboxAddress.Parse(addr));
         }
 
         // Parse semicolon-delimited CC addresses
@@ -89,12 +74,37 @@ public static class EmailNotifier
             foreach (string addr in cfg.CcAddress.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (!string.IsNullOrWhiteSpace(addr))
-                    msg.CC.Add(new MailAddress(addr));
+                    message.Cc.Add(MailboxAddress.Parse(addr));
             }
         }
 
-        client.Send(msg);
-#pragma warning restore CS0618
+        message.Subject = subject;
+        message.Body = new TextPart("plain") { Text = body };
+
+        using var client = new SmtpClient();
+        client.Timeout = 30_000;
+
+        // Determine TLS mode:
+        // - If UseSsl and port 465, assume implicit SSL (SslOnConnect).
+        // - If UseSsl and other ports, try STARTTLS.
+        // - Otherwise, connect without encryption but accept STARTTLS if offered.
+        SecureSocketOptions tlsOption;
+        if (cfg.UseSsl)
+            tlsOption = cfg.SmtpPort == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+        else
+            tlsOption = SecureSocketOptions.StartTlsWhenAvailable;
+
+        client.Connect(cfg.SmtpServer, cfg.SmtpPort, tlsOption);
+
+        // Authenticate if credentials are provided
+        if (!string.IsNullOrWhiteSpace(cfg.SmtpUsername))
+        {
+            string password = cfg.GetPassword();
+            client.Authenticate(new NetworkCredential(cfg.SmtpUsername, password));
+        }
+
+        client.Send(message);
+        client.Disconnect(quit: true);
     }
 
     /// <summary>
@@ -113,7 +123,7 @@ public static class EmailNotifier
                 return (false, $"Invalid {fieldName} address: {addr}");
             try
             {
-                _ = new MailAddress(addr);
+                MailboxAddress.Parse(addr);
             }
             catch
             {
@@ -138,7 +148,6 @@ public static class EmailNotifier
 
             if (tcp.Connected)
             {
-                // Try to read the SMTP banner
                 using var stream = tcp.GetStream();
                 stream.ReadTimeout = timeoutMs;
                 byte[] buffer = new byte[1024];
