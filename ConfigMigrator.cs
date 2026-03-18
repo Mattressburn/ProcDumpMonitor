@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics;
 
 namespace ProcDumpMonitor;
 
@@ -70,6 +71,28 @@ public static class ConfigMigrator
         if (string.IsNullOrEmpty(cfg.Scenario))
             cfg.Scenario = "Crash capture";
 
+        // Migrate legacy TargetName (short/friendly) to full process image name if possible
+        if (!string.IsNullOrWhiteSpace(cfg.TargetName) && !cfg.TargetName.Contains(".") && cfg.TargetType == TargetType.Process)
+        {
+            try
+            {
+                var match = Process.GetProcesses()
+                    .Select(p => {
+                        try { return System.IO.Path.GetFileNameWithoutExtension(p.MainModule?.ModuleName ?? p.ProcessName); } catch { return p.ProcessName; }
+                    })
+                    .FirstOrDefault(n => n.Equals(cfg.TargetName, StringComparison.OrdinalIgnoreCase) || n.StartsWith(cfg.TargetName, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(match))
+                {
+                    Logger.Log($"[ConfigMigrator] Migrated legacy TargetName '{cfg.TargetName}' to '{match}'");
+                    cfg.TargetName = match;
+                }
+                else
+                {
+                    Logger.Log($"[ConfigMigrator] Could not resolve legacy TargetName '{cfg.TargetName}' to a running process.");
+                }
+            }
+            catch { }
+        }
         return cfg;
     }
 

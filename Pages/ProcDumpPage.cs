@@ -90,7 +90,7 @@ public sealed class ProcDumpPage : WizardPage
         _cboDumpType.Items.AddRange(new object[] { "Full", "MiniPlus", "Mini", "ThreadDump" });
         _cboDumpType.SelectedIndex = 0;
 
-        foreach (var preset in ProcDumpPreset.All)
+        foreach (var preset in ProcDumpPreset.Preset.All)
             _cboScenario.Items.Add(preset.Name);
         _cboScenario.Items.Add("Custom");
         _cboScenario.SelectedIndex = 0;
@@ -452,7 +452,7 @@ public sealed class ProcDumpPage : WizardPage
                 return;
             }
 
-            var preset = ProcDumpPreset.FindByName(selected);
+            var preset = ProcDumpPreset.Preset.FindByName(selected);
             if (preset == null) return;
 
             _lblScenarioDesc.Text = preset.Description;
@@ -508,7 +508,7 @@ public sealed class ProcDumpPage : WizardPage
     //  Preset application
     // ═══════════════════════════════════════════════════════════════
 
-    private void ApplyPreset(ProcDumpPreset preset)
+    private void ApplyPreset(ProcDumpPreset.Preset preset)
     {
         _suppressPresetSwitch = true;
         try
@@ -718,7 +718,7 @@ public sealed class ProcDumpPage : WizardPage
                 _lblScenarioDesc.Text = "Configure ProcDump options manually.";
             else
             {
-                var preset = ProcDumpPreset.FindByName(_cboScenario.SelectedItem?.ToString() ?? "");
+                var preset = ProcDumpPreset.Preset.FindByName(_cboScenario.SelectedItem?.ToString() ?? "");
                 _lblScenarioDesc.Text = preset?.Description ?? "";
             }
 

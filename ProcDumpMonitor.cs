@@ -33,7 +33,8 @@ public static class ProcDumpMonitorLoop
         _health.Version = typeof(ProcDumpMonitorLoop).Assembly.GetName().Version?.ToString() ?? "1.0.0";
 
         Logger.Log("Monitor", "ProcDump Monitor started.");
-        Logger.Log("Monitor", $"Target: {cfg.TargetName}");
+        Logger.Log("Monitor", $"Raw TargetName: {cfg.TargetName}");
+        Logger.Log("Monitor", $"TargetType: {cfg.TargetType}");
 
         // ── Bitness-based binary resolution ──
         try
@@ -61,7 +62,7 @@ public static class ProcDumpMonitorLoop
 
         Logger.Log("Monitor", $"ProcDump: {cfg.ProcDumpPath}");
         Logger.Log("Monitor", $"DumpDir: {cfg.DumpDirectory}");
-        Logger.Log("Monitor", $"Args: {cfg.BuildProcDumpArgs()}");
+        Logger.Log("Monitor", $"ProcDump args: {cfg.BuildProcDumpArgs()}");
 
         // Ensure dump directory exists
         if (!Directory.Exists(cfg.DumpDirectory))

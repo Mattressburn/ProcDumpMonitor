@@ -94,4 +94,29 @@ public class ValidationTests
         var (valid, _) = EmailNotifier.ValidateAddressList(input, "To");
         Assert.Equal(expectedValid, valid);
     }
+
+    [Fact]
+    public void TargetName_Normalization_MapsShortNameToFullName()
+    {
+        var config = new Config { TargetName = "CrossFire", TargetType = TargetType.Process };
+        config.NormalizeTargetName();
+        Assert.False(string.IsNullOrWhiteSpace(config.TargetName));
+        Assert.True(config.TargetName.StartsWith("SoftwareHouse.CrossFire", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Config_BuildProcDumpArgs_UsesFullProcessName()
+    {
+        var config = new Config { TargetName = "SoftwareHouse.CrossFire.Server", TargetType = TargetType.Process, DumpDirectory = @"C:\\Dumps" };
+        string args = config.BuildProcDumpArgs();
+        Assert.Contains("SoftwareHouse.CrossFire.Server", args);
+    }
+
+    [Fact]
+    public void Config_BuildProcDumpArgs_UsesServiceName()
+    {
+        var config = new Config { TargetName = "MyService", TargetType = TargetType.Service, DumpDirectory = @"C:\\Dumps" };
+        string args = config.BuildProcDumpArgs();
+        Assert.Contains("-service MyService", args);
+    }
 }

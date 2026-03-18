@@ -3,6 +3,18 @@
   "WorkspaceRootPath": "C:\\Dev\\ProcDumpMonitor\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\targetpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\targetpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\procdumppage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\procdumppage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\docs\\engineeringcodebasereport.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:docs\\engineeringcodebasereport.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\procdumpmonitor.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
       "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:procdumpmonitor.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
     },
@@ -21,14 +33,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\stepindicator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:stepindicator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\targetpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\targetpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\procdumppage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:pages\\procdumppage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\pages\\taskpage.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -151,8 +155,12 @@
       "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:configmigrator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\docs\\engineeringcodebasereport.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
-      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:docs\\engineeringcodebasereport.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+      "AbsoluteMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|c:\\dev\\procdumpmonitor\\readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}",
+      "RelativeMoniker": "D:0:0:{2B523C54-CEE0-B747-2D79-677B4CFD8744}|ProcDumpMonitor.csproj|solutionrelative:readme.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{6C6ACE6B-F8CE-4294-9638-F3410E967557}|tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj|c:\\dev\\procdumpmonitor\\tests\\procdumpmonitor.tests\\presettests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{6C6ACE6B-F8CE-4294-9638-F3410E967557}|tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj|solutionrelative:tests\\procdumpmonitor.tests\\presettests.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -162,37 +170,63 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 12,
+          "SelectedChildIndex": 3,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 37,
+              "DocumentIndex": 39,
+              "Title": "PresetTests.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\PresetTests.cs",
+              "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\PresetTests.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\PresetTests.cs",
+              "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\PresetTests.cs",
+              "ViewState": "AgIAANYAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-17T17:24:38.599Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "EngineeringCodebaseReport.md",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\docs\\EngineeringCodebaseReport.md",
               "RelativeDocumentMoniker": "docs\\EngineeringCodebaseReport.md",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\docs\\EngineeringCodebaseReport.md",
               "RelativeToolTip": "docs\\EngineeringCodebaseReport.md",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAC8BAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
               "WhenOpened": "2026-03-11T12:39:22.38Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 36,
-              "Title": "ConfigMigrator.cs",
-              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ConfigMigrator.cs",
-              "RelativeDocumentMoniker": "ConfigMigrator.cs",
-              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\ConfigMigrator.cs",
-              "RelativeToolTip": "ConfigMigrator.cs",
-              "ViewState": "AgIAAEYAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
+              "DocumentIndex": 1,
+              "Title": "ProcDumpPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\ProcDumpPage.cs",
+              "RelativeDocumentMoniker": "Pages\\ProcDumpPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\ProcDumpPage.cs",
+              "RelativeToolTip": "Pages\\ProcDumpPage.cs",
+              "ViewState": "AgIAAC8CAAAAAAAAAAAUwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-11T12:36:15.004Z",
+              "WhenOpened": "2026-02-28T17:47:09.528Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 35,
+              "DocumentIndex": 0,
+              "Title": "TargetPage.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\TargetPage.cs",
+              "RelativeDocumentMoniker": "Pages\\TargetPage.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\TargetPage.cs",
+              "RelativeToolTip": "Pages\\TargetPage.cs",
+              "ViewState": "AgIAAC8BAAAAAAAAAAAAAC8BAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-28T17:46:18.506Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 36,
               "Title": "SupportEngineerGuide.md",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\docs\\SupportEngineerGuide.md",
               "RelativeDocumentMoniker": "docs\\SupportEngineerGuide.md",
@@ -204,7 +238,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 32,
+              "DocumentIndex": 37,
+              "Title": "ConfigMigrator.cs",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ConfigMigrator.cs",
+              "RelativeDocumentMoniker": "ConfigMigrator.cs",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\ConfigMigrator.cs",
+              "RelativeToolTip": "ConfigMigrator.cs",
+              "ViewState": "AgIAAHMAAAAAAAAAAEBVwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-11T12:36:15.004Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 33,
               "Title": "ElevationHelper.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ElevationHelper.cs",
               "RelativeDocumentMoniker": "ElevationHelper.cs",
@@ -216,7 +263,19 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 31,
+              "DocumentIndex": 38,
+              "Title": "README.md",
+              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\README.md",
+              "RelativeDocumentMoniker": "README.md",
+              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\README.md",
+              "RelativeToolTip": "README.md",
+              "ViewState": "AgIAAAIAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-03-11T16:33:31.999Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 32,
               "Title": "SupportDiagnosticsService.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\SupportDiagnosticsService.cs",
               "RelativeDocumentMoniker": "SupportDiagnosticsService.cs",
@@ -228,7 +287,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 30,
+              "DocumentIndex": 31,
               "Title": "OPERATIONAL_MODEL.md",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\OPERATIONAL_MODEL.md",
               "RelativeDocumentMoniker": "OPERATIONAL_MODEL.md",
@@ -240,7 +299,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 24,
+              "DocumentIndex": 25,
               "Title": "AppPaths.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\AppPaths.cs",
               "RelativeDocumentMoniker": "AppPaths.cs",
@@ -252,19 +311,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 25,
+              "DocumentIndex": 26,
               "Title": "Logger.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Logger.cs",
               "RelativeDocumentMoniker": "Logger.cs",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Logger.cs",
               "RelativeToolTip": "Logger.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAFIAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-03T15:54:18.778Z"
+              "WhenOpened": "2026-03-03T15:54:18.778Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 29,
+              "DocumentIndex": 30,
               "Title": "win-x64-singlefile.pubxml",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Properties\\PublishProfiles\\win-x64-singlefile.pubxml",
               "RelativeDocumentMoniker": "Properties\\PublishProfiles\\win-x64-singlefile.pubxml",
@@ -276,7 +336,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 28,
+              "DocumentIndex": 29,
               "Title": "EmailNotifier.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\EmailNotifier.cs",
               "RelativeDocumentMoniker": "EmailNotifier.cs",
@@ -288,7 +348,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 27,
+              "DocumentIndex": 28,
               "Title": "NotificationQueue.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\NotificationQueue.cs",
               "RelativeDocumentMoniker": "NotificationQueue.cs",
@@ -300,7 +360,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 26,
+              "DocumentIndex": 27,
               "Title": "TaskSchedulerService.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\TaskSchedulerService.cs",
               "RelativeDocumentMoniker": "TaskSchedulerService.cs",
@@ -312,7 +372,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 3,
               "Title": "ProcDumpMonitor.csproj",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ProcDumpMonitor.csproj",
               "RelativeDocumentMoniker": "ProcDumpMonitor.csproj",
@@ -320,12 +380,11 @@
               "RelativeToolTip": "ProcDumpMonitor.csproj",
               "ViewState": "AgIAACgAAAAAAAAAAAAowFYAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-02-28T18:44:52.068Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-02-28T18:44:52.068Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 4,
               "Title": "POST_CHANGE_REPORT.md",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\POST_CHANGE_REPORT.md",
               "RelativeDocumentMoniker": "POST_CHANGE_REPORT.md",
@@ -333,37 +392,37 @@
               "RelativeToolTip": "POST_CHANGE_REPORT.md",
               "ViewState": "AgIAAI4AAAAAAAAAAADwv6kAAAAVAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
-              "WhenOpened": "2026-03-03T18:38:45.346Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-03T18:38:45.346Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 19,
+              "DocumentIndex": 20,
               "Title": "ConfigTests.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
               "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
               "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\ConfigTests.cs",
-              "ViewState": "AgIAAEMAAAAAAAAAAIBJwFUAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAFsAAAAAAAAAAABRwF4AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T22:06:17.086Z"
+              "WhenOpened": "2026-02-28T22:06:17.086Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 33,
+              "DocumentIndex": 34,
               "Title": "ProcDumpPreset.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ProcDumpPreset.cs",
               "RelativeDocumentMoniker": "ProcDumpPreset.cs",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\ProcDumpPreset.cs",
               "RelativeToolTip": "ProcDumpPreset.cs",
-              "ViewState": "AgIAABsAAAAAAAAAAABQwAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAHcAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-03-10T20:44:44.992Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 34,
+              "DocumentIndex": 35,
               "Title": "ProcDumpQuickStart.md",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\docs\\ProcDumpQuickStart.md",
               "RelativeDocumentMoniker": "docs\\ProcDumpQuickStart.md",
@@ -375,19 +434,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 5,
               "Title": "MainForm.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\MainForm.cs",
               "RelativeDocumentMoniker": "MainForm.cs",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\MainForm.cs",
               "RelativeToolTip": "MainForm.cs",
-              "ViewState": "AgIAACIAAAAAAAAAAAAqwB4AAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAPYBAAAAAAAAAABBwB4AAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T16:58:51.188Z"
+              "WhenOpened": "2026-02-28T16:58:51.188Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 22,
+              "DocumentIndex": 23,
               "Title": "BuildInfo.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\BuildInfo.cs",
               "RelativeDocumentMoniker": "BuildInfo.cs",
@@ -399,19 +459,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 18,
+              "DocumentIndex": 19,
               "Title": "ValidationTests.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
               "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
               "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\ValidationTests.cs",
-              "ViewState": "AgIAAAYAAAAAAAAAAIBJwGEAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAHcAAAAAAAAAAABRwHoAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T22:06:03.474Z"
+              "WhenOpened": "2026-02-28T22:06:03.474Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 23,
+              "DocumentIndex": 24,
               "Title": "AboutPage.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\AboutPage.cs",
               "RelativeDocumentMoniker": "Pages\\AboutPage.cs",
@@ -419,12 +480,11 @@
               "RelativeToolTip": "Pages\\AboutPage.cs",
               "ViewState": "AgIAAEEAAAAAAAAAAIBHwGUAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T22:56:53.192Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-02-28T22:56:53.192Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 17,
+              "DocumentIndex": 18,
               "Title": "OneShotRunnerTests.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\OneShotRunnerTests.cs",
               "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\OneShotRunnerTests.cs",
@@ -436,7 +496,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 21,
+              "DocumentIndex": 22,
               "Title": "ProcDumpMonitor.Tests.csproj",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj",
               "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj",
@@ -444,12 +504,11 @@
               "RelativeToolTip": "tests\\ProcDumpMonitor.Tests\\ProcDumpMonitor.Tests.csproj",
               "ViewState": "AgIAAAQAAAAAAAAAAABBwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-02-28T22:05:15.827Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-02-28T22:05:15.827Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 16,
+              "DocumentIndex": 17,
               "Title": "OneShotSelfTest.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\OneShotSelfTest.cs",
               "RelativeDocumentMoniker": "OneShotSelfTest.cs",
@@ -461,7 +520,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 15,
+              "DocumentIndex": 16,
               "Title": "Program.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Program.cs",
               "RelativeDocumentMoniker": "Program.cs",
@@ -473,19 +532,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 14,
+              "DocumentIndex": 15,
               "Title": "Config.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Config.cs",
               "RelativeDocumentMoniker": "Config.cs",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Config.cs",
               "RelativeToolTip": "Config.cs",
-              "ViewState": "AgIAANsAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAA8BAAAAAAAAAABRwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T20:46:42.05Z"
+              "WhenOpened": "2026-02-28T20:46:42.05Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 13,
+              "DocumentIndex": 14,
               "Title": "OneShotRunner.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\OneShotRunner.cs",
               "RelativeDocumentMoniker": "OneShotRunner.cs",
@@ -497,19 +557,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 12,
+              "DocumentIndex": 13,
               "Title": "ProcDumpMonitor.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ProcDumpMonitor.cs",
               "RelativeDocumentMoniker": "ProcDumpMonitor.cs",
               "ToolTip": "C:\\Dev\\ProcDumpMonitor\\ProcDumpMonitor.cs",
               "RelativeToolTip": "ProcDumpMonitor.cs",
-              "ViewState": "AgIAAPAAAAAAAAAAAABQwAAAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAABABAAAAAAAAAEBVwAAAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T20:37:18.384Z"
+              "WhenOpened": "2026-02-28T20:37:18.384Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 11,
+              "DocumentIndex": 12,
               "Title": "HealthWriter.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\HealthWriter.cs",
               "RelativeDocumentMoniker": "HealthWriter.cs",
@@ -521,7 +582,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 20,
+              "DocumentIndex": 21,
               "Title": "RetentionPolicyTests.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\tests\\ProcDumpMonitor.Tests\\RetentionPolicyTests.cs",
               "RelativeDocumentMoniker": "tests\\ProcDumpMonitor.Tests\\RetentionPolicyTests.cs",
@@ -533,7 +594,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 11,
               "Title": "ThemeManager.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\ThemeManager.cs",
               "RelativeDocumentMoniker": "ThemeManager.cs",
@@ -545,7 +606,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 10,
               "Title": "ReviewPage.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\ReviewPage.cs",
               "RelativeDocumentMoniker": "Pages\\ReviewPage.cs",
@@ -557,7 +618,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 9,
               "Title": "NotificationsPage.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\NotificationsPage.cs",
               "RelativeDocumentMoniker": "Pages\\NotificationsPage.cs",
@@ -569,7 +630,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 8,
               "Title": "TaskPage.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\TaskPage.cs",
               "RelativeDocumentMoniker": "Pages\\TaskPage.cs",
@@ -577,37 +638,11 @@
               "RelativeToolTip": "Pages\\TaskPage.cs",
               "ViewState": "AgIAAOEAAAAAAAAAAABQwBcBAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T17:47:44.021Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-02-28T17:47:44.021Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
-              "Title": "ProcDumpPage.cs",
-              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\ProcDumpPage.cs",
-              "RelativeDocumentMoniker": "Pages\\ProcDumpPage.cs",
-              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\ProcDumpPage.cs",
-              "RelativeToolTip": "Pages\\ProcDumpPage.cs",
-              "ViewState": "AgIAAMMCAAAAAAAAAIBJwDkBAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T17:47:09.528Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "TargetPage.cs",
-              "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\Pages\\TargetPage.cs",
-              "RelativeDocumentMoniker": "Pages\\TargetPage.cs",
-              "ToolTip": "C:\\Dev\\ProcDumpMonitor\\Pages\\TargetPage.cs",
-              "RelativeToolTip": "Pages\\TargetPage.cs",
-              "ViewState": "AgIAAAMAAAAAAAAAAABQwMsAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-28T17:46:18.506Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 7,
               "Title": "StepIndicator.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\StepIndicator.cs",
               "RelativeDocumentMoniker": "StepIndicator.cs",
@@ -619,7 +654,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 6,
               "Title": "WizardPage.cs",
               "DocumentMoniker": "C:\\Dev\\ProcDumpMonitor\\WizardPage.cs",
               "RelativeDocumentMoniker": "WizardPage.cs",

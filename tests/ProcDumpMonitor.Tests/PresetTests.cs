@@ -6,7 +6,7 @@ public class PresetTests
     public void LowImpactPreset_ProducesExpectedFlags()
     {
         var cfg = MakeBaseConfig();
-        var preset = ProcDumpPreset.FindByName("Low impact full dump");
+        var preset = ProcDumpPreset.Preset.FindByName("Low impact full dump");
         Assert.NotNull(preset);
 
         preset!.Apply(cfg);
@@ -23,7 +23,7 @@ public class PresetTests
     public void CrashCapturePreset_ProducesExpectedFlags()
     {
         var cfg = MakeBaseConfig();
-        var preset = ProcDumpPreset.FindByName("Crash capture");
+        var preset = ProcDumpPreset.Preset.FindByName("Crash capture");
         Assert.NotNull(preset);
 
         preset!.Apply(cfg);
@@ -41,7 +41,7 @@ public class PresetTests
     public void HangCapturePreset_ProducesExpectedFlags()
     {
         var cfg = MakeBaseConfig();
-        var preset = ProcDumpPreset.FindByName("Hang capture");
+        var preset = ProcDumpPreset.Preset.FindByName("Hang capture");
         Assert.NotNull(preset);
 
         preset!.Apply(cfg);
@@ -57,7 +57,7 @@ public class PresetTests
     public void HighCpuPreset_ProducesExpectedFlags()
     {
         var cfg = MakeBaseConfig();
-        var preset = ProcDumpPreset.FindByName("High CPU spike capture");
+        var preset = ProcDumpPreset.Preset.FindByName("High CPU spike capture");
         Assert.NotNull(preset);
 
         preset!.Apply(cfg);
@@ -73,7 +73,7 @@ public class PresetTests
     public void MemoryThresholdPreset_ProducesExpectedFlags()
     {
         var cfg = MakeBaseConfig();
-        var preset = ProcDumpPreset.FindByName("Memory threshold capture");
+        var preset = ProcDumpPreset.Preset.FindByName("Memory threshold capture");
         Assert.NotNull(preset);
 
         preset!.Apply(cfg);
@@ -92,7 +92,7 @@ public class PresetTests
         cfg.DumpOnException = true;
         cfg.CpuThreshold = 50;
 
-        var preset = ProcDumpPreset.FindByName("Hang capture");
+        var preset = ProcDumpPreset.Preset.FindByName("Hang capture");
         Assert.NotNull(preset);
 
         preset!.Apply(cfg);
@@ -111,7 +111,7 @@ public class PresetTests
         cfg.DumpDirectory = @"C:\Dumps";
         cfg.TargetName = "MyService";
 
-        var preset = ProcDumpPreset.FindByName("Crash capture");
+        var preset = ProcDumpPreset.Preset.FindByName("Crash capture");
         Assert.NotNull(preset);
 
         preset!.Apply(cfg);
@@ -125,8 +125,8 @@ public class PresetTests
     [Fact]
     public void AllPresetsExist()
     {
-        Assert.True(ProcDumpPreset.All.Count >= 5);
-        foreach (var preset in ProcDumpPreset.All)
+        Assert.True(ProcDumpPreset.Preset.All.Count >= 5);
+        foreach (var preset in ProcDumpPreset.Preset.All)
         {
             Assert.False(string.IsNullOrWhiteSpace(preset.Name));
             Assert.False(string.IsNullOrWhiteSpace(preset.Description));

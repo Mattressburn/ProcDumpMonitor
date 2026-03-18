@@ -42,6 +42,15 @@ public class ConfigTests
         Assert.Equal("Future", cfg.TargetName);
     }
 
+    [Fact]
+    public void ConfigMigrator_UpgradesShortTargetName()
+    {
+        string legacyJson = "{\"TargetName\":\"CrossFire\",\"TargetType\":0}";
+        var config = ConfigMigrator.Migrate(legacyJson);
+        Assert.False(string.IsNullOrWhiteSpace(config.TargetName));
+        Assert.True(config.TargetName.StartsWith("SoftwareHouse.CrossFire", StringComparison.OrdinalIgnoreCase));
+    }
+
     // ── e2: Export/Import round-trip ──
 
     [Fact]

@@ -2,8 +2,15 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Diagnostics;
 
 namespace ProcDumpMonitor;
+
+public enum TargetType
+{
+    Process,
+    Service
+}
 
 // Source-generated JSON context for trim-safe serialization (Config only)
 [JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -39,6 +46,7 @@ public class Config
 
     // Target
     public string TargetName { get; set; } = "";
+    public TargetType TargetType { get; set; } = TargetType.Process;
 
     // ProcDump
     public string ProcDumpPath { get; set; } = "";
@@ -191,7 +199,17 @@ public class Config
 
         // Target
         if (WaitForProcess) args.Add("-w");
-        args.Add(TargetName);
+
+        string target = TargetName; 
+        if (TargetType == TargetType.Process &&
+            !string.IsNullOrWhiteSpace(target) && 
+            !target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            target += ".exe";
+        }
+
+        args.Add(target);
+        
         args.Add($"\"{DumpDirectory}\"");
 
         return string.Join(" ", args);
@@ -223,11 +241,41 @@ public class Config
         try
         {
             string json = File.ReadAllText(path);
-            return ConfigMigrator.Migrate(json);
+            var cfg = ConfigMigrator.Migrate(json);
+            cfg.NormalizeTargetName();
+            return cfg;
         }
         catch
         {
             return new Config { ConfigVersion = CurrentVersion, Scenario = "Crash capture" };
+        }
+    }
+
+    /// <summary>
+    /// Normalize legacy TargetName (short/friendly) to full process image name if possible.
+    /// </summary>
+    public void NormalizeTargetName()
+    {
+        if (!string.IsNullOrWhiteSpace(TargetName) && !TargetName.Contains(".") && TargetType == TargetType.Process)
+        {
+            try
+            {
+                var match = Process.GetProcesses()
+                    .Select(p => {
+                        try { return System.IO.Path.GetFileNameWithoutExtension(p.MainModule?.ModuleName ?? p.ProcessName); } catch { return p.ProcessName; }
+                    })
+                    .FirstOrDefault(n => n.Equals(TargetName, StringComparison.OrdinalIgnoreCase) || n.StartsWith(TargetName, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrEmpty(match))
+                {
+                    Logger.Log($"[Config] Migrated legacy TargetName '{TargetName}' to '{match}'");
+                    TargetName = match;
+                }
+                else
+                {
+                    Logger.Log($"[Config] Could not resolve legacy TargetName '{TargetName}' to a running process.");
+                }
+            }
+            catch { }
         }
     }
 }
