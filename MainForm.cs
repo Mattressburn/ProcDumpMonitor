@@ -23,9 +23,7 @@ public class MainForm : Form
     // ── Menu bar ──
     private readonly MenuStrip _menuStrip = new();
 
-    // ── System tray ──
-    private readonly NotifyIcon _trayIcon = new();
-    private readonly ContextMenuStrip _trayMenu = new();
+
 
     // ── State ──
     private Config _cfg = new();
@@ -52,17 +50,7 @@ public class MainForm : Form
         ThemeManager.ApplyTheme(this);
         ThemeManager.EnableDarkTitleBar(this);
 
-        // Tray icon setup
-        _trayIcon.Icon = Icon;
-        _trayIcon.Text = "ProcDump Monitor";
-        _trayIcon.Visible = false;
-        _trayMenu.Items.Add("Open", null, (_, _) => RestoreFromTray());
-        _trayMenu.Items.Add("Create Support Bundle", null, (_, _) => RunSupportDiagnosticsFromGui());
-        _trayMenu.Items.Add("-");
-        _trayMenu.Items.Add("Exit", null, (_, _) => { _trayIcon.Visible = false; Application.Exit(); });
-        _trayIcon.ContextMenuStrip = _trayMenu;
-        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
-        ThemeManager.ApplyTheme(_trayMenu);
+
 
         Load += MainForm_Load;
     }
@@ -434,31 +422,8 @@ public class MainForm : Form
         }
     }
 
-    protected override void OnResize(EventArgs e)
-    {
-        base.OnResize(e);
-        if (WindowState == FormWindowState.Minimized)
-        {
-            _trayIcon.Visible = true;
-            ShowInTaskbar = false;
-            Hide();
-        }
-    }
-
-    private void RestoreFromTray()
-    {
-        Show();
-        ShowInTaskbar = true;
-        WindowState = FormWindowState.Normal;
-        _trayIcon.Visible = false;
-        Activate();
-    }
-
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        _trayIcon.Visible = false;
-        _trayIcon.Dispose();
-        _trayMenu.Dispose();
         base.OnFormClosing(e);
     }
 
