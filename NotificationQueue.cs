@@ -14,7 +14,7 @@ public sealed class NotificationQueue : IDisposable
 {
     private readonly BlockingCollection<Action> _queue;
     private readonly Thread _worker;
-    private volatile bool _disposed;
+    private int _disposed; // 0 = active, 1 = disposed (Interlocked for thread safety)
 
     /// <summary>Maximum number of queued notification items before new items are dropped.</summary>
     public int MaxQueueSize { get; }
@@ -38,11 +38,18 @@ public sealed class NotificationQueue : IDisposable
     /// </summary>
     public void Enqueue(Action work)
     {
-        if (_disposed) return;
+        if (Volatile.Read(ref _disposed) != 0) return;
 
-        if (!_queue.TryAdd(work))
+        try
         {
-            Logger.Log("NotifyQ", "Notification queue full; dropping item.");
+            if (!_queue.TryAdd(work))
+            {
+                Logger.Log("NotifyQ", "Notification queue full; dropping item.");
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Queue was marked as complete for adding (disposed between check and TryAdd)
         }
     }
 
@@ -117,8 +124,7 @@ public sealed class NotificationQueue : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
 
         _queue.CompleteAdding();
 

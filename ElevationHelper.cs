@@ -43,8 +43,8 @@ internal static class ElevationHelper
 
         try
         {
-            Process.Start(psi);
-            return true;
+            using var proc = Process.Start(psi);
+            return proc != null;
         }
         catch (System.ComponentModel.Win32Exception)
         {

@@ -269,7 +269,7 @@ public sealed class NotificationsPage : WizardPage
             _txtSmtpPass.PlaceholderText = "(stored securely)";
 
         _chkWebhookEnabled.Checked = cfg.WebhookEnabled;
-        _txtWebhookUrl.Text = cfg.WebhookUrl;
+        _txtWebhookUrl.Text = cfg.GetWebhookUrl();
 
         _nudMaxLogSizeMB.Value = Math.Clamp(cfg.MaxLogSizeMB, 1, 1000);
         _nudMaxLogFiles.Value = Math.Clamp(cfg.MaxLogFiles, 1, 100);
@@ -314,7 +314,7 @@ public sealed class NotificationsPage : WizardPage
             cfg.SetPassword(passText);
 
         cfg.WebhookEnabled = _chkWebhookEnabled.Checked;
-        cfg.WebhookUrl = _txtWebhookUrl.Text.Trim();
+        cfg.SetWebhookUrl(_txtWebhookUrl.Text.Trim());
 
         cfg.MaxLogSizeMB = (int)_nudMaxLogSizeMB.Value;
         cfg.MaxLogFiles = (int)_nudMaxLogFiles.Value;

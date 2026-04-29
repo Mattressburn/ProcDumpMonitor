@@ -95,8 +95,8 @@ public static class SupportDiagnosticsService
                 UseShellExecute = true,
                 Verb = "runas"
             };
-            Process.Start(psi);
-            return true;
+            using var proc = Process.Start(psi);
+            return proc != null;
         }
         catch (System.ComponentModel.Win32Exception)
         {

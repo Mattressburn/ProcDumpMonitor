@@ -268,7 +268,7 @@ public sealed class ReviewPage : WizardPage
         _btnOpenDumpFolder.Click += (_, _) =>
         {
             if (Directory.Exists(_cfg.DumpDirectory))
-                Process.Start("explorer.exe", _cfg.DumpDirectory);
+                using (Process.Start("explorer.exe", _cfg.DumpDirectory)) { }
             else
                 SetStatusBanner("error", "Dump directory does not exist yet.");
         };
@@ -276,7 +276,7 @@ public sealed class ReviewPage : WizardPage
         _btnViewLogs.Click += (_, _) =>
         {
             if (File.Exists(Logger.LogPath))
-                Process.Start("notepad.exe", Logger.LogPath);
+                using (Process.Start("notepad.exe", Logger.LogPath)) { }
             else
                 SetStatusBanner("error", "Log file does not exist yet.");
         };
@@ -298,7 +298,7 @@ public sealed class ReviewPage : WizardPage
 
         _btnOpenTaskScheduler.Click += (_, _) =>
         {
-            try { Process.Start(new ProcessStartInfo("taskschd.msc") { UseShellExecute = true }); }
+            try { using (Process.Start(new ProcessStartInfo("taskschd.msc") { UseShellExecute = true })) { } }
             catch (Exception ex) { SetStatusBanner("error", $"Cannot open Task Scheduler: {ex.Message}"); }
         };
 
@@ -366,13 +366,17 @@ public sealed class ReviewPage : WizardPage
             if (IsDisposed) return;
             Invoke(() =>
             {
+                if (IsDisposed) return;
                 _btnRunNow.Enabled = info.Exists;
                 _btnStop.Enabled = info.Exists;
                 _btnRemove.Enabled = info.Exists;
                 _lblStatus.Text = $"Task state: {info.State}";
             });
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.Log("ReviewPage", $"Poll failed: {ex.Message}");
+        }
         finally
         {
             _polling = false;
@@ -417,6 +421,7 @@ public sealed class ReviewPage : WizardPage
         sb.AppendLine();
 
         sb.AppendLine("═══ SCHEDULED TASK ═══");
+        sb.AppendLine($"  Mode:           {(_cfg.RemoveTaskAfterSuccessfulDump ? "One-shot: capture one dump then remove task" : "Persistent monitor (run continuously)")}");
         sb.AppendLine($"  Task Name:      {_cfg.TaskName}");
         sb.AppendLine($"  Action:         {(_taskExisted ? "UPDATE existing" : "CREATE new")}");
         try
@@ -439,8 +444,7 @@ public sealed class ReviewPage : WizardPage
         {
             sb.AppendLine("  Email:          OFF");
         }
-        sb.AppendLine($"  Webhook:        {(_cfg.WebhookEnabled ? $"ON → {_cfg.WebhookUrl}" : "OFF")}");
-        sb.AppendLine();
+        sb.AppendLine($"  Webhook:        {(_cfg.WebhookEnabled ? $"ON → {_cfg.GetWebhookUrl()}" : "OFF")}");        sb.AppendLine();
 
         sb.AppendLine("═══ MAINTENANCE ═══");
         sb.AppendLine($"  Log Rotation:   {_cfg.MaxLogSizeMB} MB × {_cfg.MaxLogFiles} files");

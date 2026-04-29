@@ -40,7 +40,7 @@ public class WebhookNotifier : INotifier
     };
 
     public bool IsEnabled(Config cfg) =>
-        cfg.WebhookEnabled && !string.IsNullOrWhiteSpace(cfg.WebhookUrl);
+        cfg.WebhookEnabled && !string.IsNullOrWhiteSpace(cfg.GetWebhookUrl());
 
     public void NotifyDump(Config cfg, string dumpFilePath)
     {
@@ -55,7 +55,7 @@ public class WebhookNotifier : INotifier
                    $"**Timestamp:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}"
         };
 
-        Post(cfg.WebhookUrl, payload);
+        Post(cfg.GetWebhookUrl(), payload);
     }
 
     public void NotifyWarning(Config cfg, string subject, string message)
@@ -68,7 +68,7 @@ public class WebhookNotifier : INotifier
             Text = message
         };
 
-        Post(cfg.WebhookUrl, payload);
+        Post(cfg.GetWebhookUrl(), payload);
     }
 
     private static void Post(string url, WebhookPayload payload)

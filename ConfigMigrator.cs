@@ -91,7 +91,10 @@ public static class ConfigMigrator
                     Logger.Log($"[ConfigMigrator] Could not resolve legacy TargetName '{cfg.TargetName}' to a running process.");
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.Log("ConfigMigrator", $"Process enumeration failed during target name migration: {ex.Message}");
+            }
         }
         return cfg;
     }

@@ -94,17 +94,24 @@ public static class EmailNotifier
         else
             tlsOption = SecureSocketOptions.StartTlsWhenAvailable;
 
-        client.Connect(cfg.SmtpServer, cfg.SmtpPort, tlsOption);
-
-        // Authenticate if credentials are provided
-        if (!string.IsNullOrWhiteSpace(cfg.SmtpUsername))
+        try
         {
-            string password = cfg.GetPassword();
-            client.Authenticate(new NetworkCredential(cfg.SmtpUsername, password));
-        }
+            client.Connect(cfg.SmtpServer, cfg.SmtpPort, tlsOption);
 
-        client.Send(message);
-        client.Disconnect(quit: true);
+            // Authenticate if credentials are provided
+            if (!string.IsNullOrWhiteSpace(cfg.SmtpUsername))
+            {
+                string password = cfg.GetPassword();
+                client.Authenticate(new NetworkCredential(cfg.SmtpUsername, password));
+            }
+
+            client.Send(message);
+        }
+        finally
+        {
+            if (client.IsConnected)
+                client.Disconnect(quit: true);
+        }
     }
 
     /// <summary>

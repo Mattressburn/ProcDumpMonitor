@@ -28,6 +28,9 @@ public static class ConfigExportImport
         if (!string.IsNullOrEmpty(export.WebhookUrl))
             export.WebhookUrl = RedactedMarker;
 
+        if (!string.IsNullOrEmpty(export.EncryptedWebhookUrlBlob))
+            export.EncryptedWebhookUrlBlob = RedactedMarker;
+
         // Ensure version is stamped
         export.ConfigVersion = Config.CurrentVersion;
 
@@ -59,6 +62,8 @@ public static class ConfigExportImport
             cfg.EncryptedPasswordBlob = "";
         if (cfg.WebhookUrl == RedactedMarker)
             cfg.WebhookUrl = "";
+        if (cfg.EncryptedWebhookUrlBlob == RedactedMarker)
+            cfg.EncryptedWebhookUrlBlob = "";
 
         Logger.Log("Config", $"Config imported from {inputPath} (notifications disabled until re-enabled).");
         return cfg;

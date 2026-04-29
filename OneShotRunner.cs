@@ -131,7 +131,11 @@ public sealed class RealProcDumpRunner : IProcDumpRunner
                 .OrderByDescending(f => f.LastWriteTimeUtc)
                 .FirstOrDefault()?.FullName;
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            Logger.Log("OneShot", $"Dump detection failed: {ex.Message}");
+            return null;
+        }
     }
 }
 

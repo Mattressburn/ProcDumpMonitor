@@ -380,9 +380,12 @@ public class MainForm : Form
             {
                 try
                 {
-                    Process.Start("explorer.exe", $"/select,\"{zipPath}\"");
+                    using (Process.Start("explorer.exe", $"/select,\"{zipPath}\"")) { }
                 }
-                catch { /* best effort */ }
+                catch (Exception ex)
+                {
+                    Logger.Log("Diagnostics", $"Failed to open folder: {ex.Message}");
+                }
             }
         }
         else
@@ -437,7 +440,7 @@ public class MainForm : Form
                 UseShellExecute = true,
                 Verb = "runas"
             };
-            Process.Start(psi);
+            using var proc = Process.Start(psi);
             Application.Exit();
         }
         catch (System.ComponentModel.Win32Exception)

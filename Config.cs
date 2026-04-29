@@ -100,6 +100,12 @@ public class Config
     // Task
     public string TaskName { get; set; } = "ProcDump Monitor";
 
+    // ── One-shot cleanup mode (V3) ──
+    // When true, the scheduled task will be registered to run in one-shot mode
+    // and will remove itself after a successful dump capture. Default: false
+    // (keeps existing persistent monitor behavior).
+    public bool RemoveTaskAfterSuccessfulDump { get; set; }
+
     // ── Email (F5: multi-recipient) ──
     public bool EmailEnabled { get; set; }
     public string SmtpServer { get; set; } = "";
@@ -114,10 +120,12 @@ public class Config
     // ── Webhook (F10) ──
     public bool WebhookEnabled { get; set; }
     public string WebhookUrl { get; set; } = "";
+    public string EncryptedWebhookUrlBlob { get; set; } = "";   // Base64-encoded DPAPI blob
 
     // ----- helpers -----
 
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("ProcDumpMonitor-SMTP-v1");
+    private static readonly byte[] WebhookEntropy = Encoding.UTF8.GetBytes("ProcDumpMonitor-Webhook-v1");
 
     /// <summary>Encrypt a plaintext password with DPAPI (LocalMachine scope).</summary>
     public void SetPassword(string plaintext)
@@ -147,6 +155,44 @@ public class Config
         {
             return "";
         }
+    }
+
+    /// <summary>Encrypt a plaintext webhook URL with DPAPI (LocalMachine scope).</summary>
+    public void SetWebhookUrl(string plaintext)
+    {
+        if (string.IsNullOrEmpty(plaintext))
+        {
+            EncryptedWebhookUrlBlob = "";
+            WebhookUrl = "";
+            return;
+        }
+        byte[] data = Encoding.UTF8.GetBytes(plaintext);
+        byte[] encrypted = ProtectedData.Protect(data, WebhookEntropy, DataProtectionScope.LocalMachine);
+        EncryptedWebhookUrlBlob = Convert.ToBase64String(encrypted);
+        WebhookUrl = ""; // Clear plain text once encrypted
+    }
+
+    /// <summary>
+    /// Decrypt the stored webhook URL DPAPI blob. Falls back to plain-text
+    /// WebhookUrl for backward compatibility with pre-encrypted configs.
+    /// </summary>
+    public string GetWebhookUrl()
+    {
+        if (!string.IsNullOrEmpty(EncryptedWebhookUrlBlob))
+        {
+            try
+            {
+                byte[] encrypted = Convert.FromBase64String(EncryptedWebhookUrlBlob);
+                byte[] data = ProtectedData.Unprotect(encrypted, WebhookEntropy, DataProtectionScope.LocalMachine);
+                return Encoding.UTF8.GetString(data);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+        // Fallback: legacy plain-text field (will be migrated on next Save)
+        return WebhookUrl;
     }
 
     /// <summary>Build ProcDump arguments string (for display / copy).</summary>
@@ -229,6 +275,12 @@ public class Config
         // Always stamp the current schema version
         ConfigVersion = CurrentVersion;
 
+        // Migrate plain-text webhook URL to encrypted blob
+        if (!string.IsNullOrEmpty(WebhookUrl) && string.IsNullOrEmpty(EncryptedWebhookUrlBlob))
+        {
+            SetWebhookUrl(WebhookUrl);
+        }
+
         string json = JsonSerializer.Serialize(this, ConfigJsonContext.Default.Config);
         File.WriteAllText(path, json);
     }
@@ -275,7 +327,10 @@ public class Config
                     Logger.Log($"[Config] Could not resolve legacy TargetName '{TargetName}' to a running process.");
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Logger.Log("Config", $"Process enumeration failed during target name normalization: {ex.Message}");
+            }
         }
     }
 }
