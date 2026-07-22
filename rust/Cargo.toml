@@ -1,0 +1,42 @@
+[package]
+name = "procdumpmonitor"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "ProcDumpMonitor"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+base64 = "0.22"
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "builder", "hostname", "pool", "rustls-tls"] }
+ureq = { version = "2", features = ["json"] }
+
+[target.'cfg(windows)'.dependencies]
+native-windows-gui = "1.0.13"
+native-windows-derive = "1.0.5"
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Security_Cryptography",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+] }
+
+[build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
