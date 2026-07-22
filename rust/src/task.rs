@@ -10,9 +10,6 @@ pub fn sanitize_task_name(name: &str) -> String {
     name.chars().filter(|c| !matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|')).collect()
 }
 
-// ponytail: used by the GUI wizard to prefill the task name field (Task 9);
-// no caller yet outside its own test.
-#[allow(dead_code)]
 pub fn auto_task_name(target: &str) -> String {
     format!("ProcDump Monitor {target}")
 }

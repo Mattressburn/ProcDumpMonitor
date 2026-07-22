@@ -1,4 +1,7 @@
-#![allow(dead_code)] // consumed from Task 8 onward
+// `list()` (Windows-only) is consumed by the GUI's Target page (Task 9); on a
+// non-Windows `cargo build` (no GUI, no `list()`) that leaves `parse_sc_output`/
+// `ServiceInfo` looking unused outside of `cfg(test)`, hence the narrow allow.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 #[derive(Debug, Clone)]
 pub struct ServiceInfo {

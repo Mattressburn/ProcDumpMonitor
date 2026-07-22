@@ -16,12 +16,14 @@ mod cli;
 mod logger;
 #[cfg(windows)]
 mod monitor;
+#[cfg(windows)]
+mod gui;
 
 #[cfg(windows)]
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() {
-        eprintln!("GUI arrives in Task 9");
+        gui::run();
         return;
     }
     attach_console();
