@@ -1,4 +1,6 @@
-#![allow(dead_code)] // consumed from Task 8 onward
+// ponytail: BinaryChoice.summary is only read from monitor.rs, which is
+// #[cfg(windows)] — this product's entry points are Windows-only.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::{Path, PathBuf};
 

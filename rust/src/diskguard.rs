@@ -1,4 +1,8 @@
-#![allow(dead_code)] // consumed from Task 8 onward
+// ponytail: check_free_space is only called from monitor.rs, which is
+// #[cfg(windows)] — this product's entry points are Windows-only, so the
+// non-windows shadow impl below has no Linux caller outside tests.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 /// (ok, free_mb). min<=0 disables (true, 0). Fails open on error (true, -1).
 #[cfg(windows)]
 pub fn check_free_space(path: &std::path::Path, min_free_mb: i64) -> (bool, i64) {

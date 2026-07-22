@@ -1,10 +1,13 @@
-#![allow(dead_code)] // consumed from Task 8 onward
 #![allow(unsafe_code)]
 // Windows-only: DPAPI LocalMachine so blobs decrypt under SYSTEM.
 #[cfg(windows)]
 pub use imp::*;
 
+// ponytail: only referenced from notify.rs's #[cfg(windows)] paths; cfg-gating
+// here (rather than a blanket allow(dead_code)) keeps Linux builds warning-free.
+#[cfg(windows)]
 pub const SMTP_ENTROPY: &[u8] = b"ProcDumpMonitor-SMTP-v1";
+#[cfg(windows)]
 pub const WEBHOOK_ENTROPY: &[u8] = b"ProcDumpMonitor-Webhook-v1";
 
 #[cfg(windows)]
@@ -22,6 +25,10 @@ mod imp {
     }
 
     /// Encrypt with DPAPI LocalMachine; returns base64. Empty input -> "".
+    // ponytail: called when the GUI wizard saves a SMTP password / webhook
+    // URL (Task 9); the monitor only ever decrypts (unprotect), so a release
+    // build has no caller yet.
+    #[allow(dead_code)]
     pub fn protect(plain: &str, entropy: &[u8]) -> String {
         if plain.is_empty() { return String::new(); }
         let input = blob(plain.as_bytes());

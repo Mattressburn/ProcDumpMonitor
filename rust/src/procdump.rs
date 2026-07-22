@@ -1,5 +1,3 @@
-#![allow(dead_code)] // consumed from Task 8 onward
-
 use crate::config::{Config, TargetType};
 
 /// Port of C# Config.BuildProcDumpArgs — flag order is contract, do not "tidy".
@@ -63,6 +61,10 @@ pub fn build_args(cfg: &Config) -> String {
     args.join(" ")
 }
 
+// ponytail: the whole preset picker (fields, find/all/apply, PRESETS) is
+// wired up by the GUI's preset picker page (Task 9); tests exercise it
+// directly today, but a release build has no caller yet.
+#[allow(dead_code)]
 pub struct Preset {
     pub name: &'static str,
     pub description: &'static str,
@@ -70,6 +72,7 @@ pub struct Preset {
     apply_fn: fn(&mut Config),
 }
 
+#[allow(dead_code)]
 impl Preset {
     pub fn all() -> &'static [Preset] { &PRESETS }
 
@@ -104,6 +107,7 @@ impl Preset {
     }
 }
 
+#[allow(dead_code)]
 static PRESETS: [Preset; 5] = [
     Preset {
         name: "Crash capture",

@@ -1,5 +1,3 @@
-#![allow(dead_code)] // consumed from Task 3 onward
-
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -150,6 +148,9 @@ impl Config {
         }
     }
 
+    // ponytail: written by the GUI wizard's save step (Task 9); tests exercise
+    // it directly (see round_trip test below) but nothing else calls it yet.
+    #[allow(dead_code)]
     pub fn save(&mut self, path: &Path) -> std::io::Result<()> {
         self.config_version = CURRENT_VERSION;
         let json = serde_json::to_string_pretty(self)

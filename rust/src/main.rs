@@ -19,31 +19,64 @@ mod monitor;
 
 #[cfg(windows)]
 fn main() {
-    native_windows_gui::init().expect("nwg init failed");
-    let mut window = Default::default();
-    let mut label = Default::default();
-    native_windows_gui::Window::builder()
-        .size((360, 120))
-        .title("PDM Spike")
-        .build(&mut window)
-        .unwrap();
-    native_windows_gui::Label::builder()
-        .text("nwg + requireAdministrator OK")
-        .size((320, 40))
-        .position((20, 30))
-        .parent(&window)
-        .build(&mut label)
-        .unwrap();
-    let handler = native_windows_gui::full_bind_event_handler(
-        &window.handle,
-        move |evt, _data, _handle| {
-            if evt == native_windows_gui::Event::OnWindowClose {
-                native_windows_gui::stop_thread_dispatch();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.is_empty() {
+        eprintln!("GUI arrives in Task 9");
+        return;
+    }
+    attach_console();
+    let code = match cli::parse(&args) {
+        Ok(verb) => cli::run(verb),
+        Err(e) => {
+            eprintln!("ERROR: {e}\n{}", cli::USAGE);
+            2
+        }
+    };
+    std::process::exit(code);
+}
+
+/// windows_subsystem = "windows" means the OS never populated this process's
+/// std handles, so AttachConsole alone is NOT enough to make println!/
+/// eprintln! work again (they panic on a broken write, which aborts under
+/// panic = "abort") -- CONOUT$ must be reopened and installed explicitly.
+/// Skips any handle the caller already redirected (e.g. `> out.txt`, a
+/// pipe, or PowerShell capturing `$x = ...`) so we never clobber a handle
+/// that already works. No-op when there's no parent console at all
+/// (launched by Task Scheduler / Explorer with nothing to attach to).
+#[cfg(windows)]
+fn attach_console() {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Console::{
+        AttachConsole, GetStdHandle, SetStdHandle, ATTACH_PARENT_PROCESS, STD_ERROR_HANDLE,
+        STD_HANDLE, STD_OUTPUT_HANDLE,
+    };
+
+    fn is_broken(h: STD_HANDLE) -> bool {
+        match unsafe { GetStdHandle(h) } {
+            Ok(handle) => handle.is_invalid() || handle.0.is_null(),
+            Err(_) => true,
+        }
+    }
+
+    if !is_broken(STD_OUTPUT_HANDLE) && !is_broken(STD_ERROR_HANDLE) {
+        return; // caller already redirected both -- leave them alone
+    }
+    if unsafe { AttachConsole(ATTACH_PARENT_PROCESS) }.is_err() {
+        return; // no parent console to attach to
+    }
+    if let Ok(conout) = std::fs::OpenOptions::new().read(true).write(true).open("CONOUT$") {
+        let h = HANDLE(conout.as_raw_handle() as _);
+        unsafe {
+            if is_broken(STD_OUTPUT_HANDLE) {
+                let _ = SetStdHandle(STD_OUTPUT_HANDLE, h);
             }
-        },
-    );
-    native_windows_gui::dispatch_thread_events();
-    native_windows_gui::unbind_event_handler(&handler);
+            if is_broken(STD_ERROR_HANDLE) {
+                let _ = SetStdHandle(STD_ERROR_HANDLE, h);
+            }
+        }
+        std::mem::forget(conout); // handle now owned by the process's stdio
+    }
 }
 
 #[cfg(not(windows))]

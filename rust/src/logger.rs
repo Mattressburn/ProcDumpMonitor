@@ -1,4 +1,7 @@
-#![allow(dead_code)] // consumed from Task 8 onward
+// ponytail: init/log are only called from #[cfg(windows)] call sites
+// (cli::run, monitor.rs) — this product's entry points are Windows-only.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;

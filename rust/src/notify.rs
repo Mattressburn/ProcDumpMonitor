@@ -1,4 +1,8 @@
-#![allow(dead_code)] // consumed from Task 8 onward
+// ponytail: NotifyQueue::enqueue_dump/enqueue_warning (and everything they
+// close over — send_email, post_webhook, etc.) are only called from
+// monitor.rs, which is #[cfg(windows)] — this product's entry points are
+// Windows-only.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use crate::config::Config;
 use crate::logger;
@@ -127,6 +131,9 @@ pub fn send_email(cfg: &Config, subject: &str, body: &str) -> Result<(), String>
     builder.build().send(&email).map(|_| ()).map_err(|e| e.to_string())
 }
 
+// ponytail: wired up by the GUI's "Send test email" button (Task 9); no
+// caller yet on either platform, unlike send_email which the monitor uses.
+#[allow(dead_code)]
 pub fn send_test_email(cfg: &Config) -> Result<(), String> {
     let machine = machine_name();
     let subject = format!("[ProcDump] Test email from {machine}");
@@ -140,6 +147,9 @@ pub fn send_test_email(cfg: &Config) -> Result<(), String> {
 }
 
 /// Raw TCP connect + banner read (like Test-NetConnection). Does not send mail.
+// ponytail: wired up by the GUI's "Test connection" button (Task 9); no
+// caller yet on either platform.
+#[allow(dead_code)]
 pub fn validate_smtp_connectivity(server: &str, port: u16, timeout_ms: u64) -> (bool, String) {
     use std::io::Read;
     use std::net::{TcpStream, ToSocketAddrs};

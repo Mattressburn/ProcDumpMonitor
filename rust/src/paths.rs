@@ -1,4 +1,7 @@
-#![allow(dead_code)] // consumed from Task 3 onward
+// ponytail: exe_path/log_path/log_dir/health_path are only called from
+// #[cfg(windows)] call sites (cli::run, monitor.rs, task::win) — this
+// product's entry points are Windows-only.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::PathBuf;
 
