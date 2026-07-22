@@ -1,8 +1,10 @@
 #![cfg(windows)]
+mod page_about;
+mod page_notify;
 mod page_procdump;
+mod page_review;
 mod page_target;
 mod page_task;
-// Task 11 adds: mod page_notify; mod page_review; mod page_about;
 
 use crate::config::Config;
 use crate::paths;
@@ -118,6 +120,25 @@ pub fn run() {
     let btn_reset_auto_h = task_page.btn_reset_auto.handle;
     let btn_copy_cmd_h = task_page.btn_copy_cmd.handle;
 
+    let notify_page = page_notify::build(&frames[3], state.clone());
+    let chk_email_h = notify_page.chk_email.handle;
+    let chk_webhook_h = notify_page.chk_webhook.handle;
+    let btn_validate_h = notify_page.btn_validate.handle;
+    let btn_test_email_h = notify_page.btn_test_email.handle;
+
+    let review_page = page_review::build(&frames[4], state.clone());
+    let btn_create_h = review_page.btn_create.handle;
+    let btn_run_h = review_page.btn_run.handle;
+    let btn_stop_h = review_page.btn_stop.handle;
+    let btn_remove_h = review_page.btn_remove.handle;
+    let btn_save_only_h = review_page.btn_save_only.handle;
+    let btn_open_dumps_h = review_page.btn_open_dumps.handle;
+    let btn_view_logs_h = review_page.btn_view_logs.handle;
+    let btn_copy_args_h = review_page.btn_copy_args.handle;
+    let btn_taskschd_h = review_page.btn_taskschd.handle;
+
+    let about_page = page_about::build(&frames[5], state.clone());
+
     let current = Cell::new(0usize);
 
     // Single subclass hook for the whole window: `full_bind_event_handler`
@@ -156,6 +177,60 @@ pub fn run() {
             {
                 procdump_page.on_option_changed(&state);
             }
+            nwg::Event::OnButtonClick if handle == chk_email_h => {
+                notify_page.on_email_toggled();
+            }
+            nwg::Event::OnButtonClick if handle == chk_webhook_h => {
+                notify_page.on_webhook_toggled();
+            }
+            nwg::Event::OnButtonClick if handle == btn_validate_h => {
+                notify_page.validate_smtp();
+            }
+            nwg::Event::OnButtonClick if handle == btn_test_email_h => {
+                notify_page.send_test_email(&state);
+            }
+            nwg::Event::OnButtonClick if handle == btn_create_h => {
+                // Mirrors a forward wizard nav's save step across every page
+                // (Review itself has no editable fields) so Create/Update
+                // Task always installs whatever is currently on-screen, even
+                // if the user jumped here without visiting every page this
+                // session. Aborts -- without installing -- if Notify's
+                // validation fails; it has already shown the error dialog.
+                let ok = {
+                    let mut cfg = state.cfg.borrow_mut();
+                    target_page.save(&mut cfg)
+                        && procdump_page.save(&mut cfg)
+                        && task_page.save(&mut cfg)
+                        && notify_page.save(&mut cfg)
+                };
+                if ok {
+                    review_page.create_task(&state);
+                }
+            }
+            nwg::Event::OnButtonClick if handle == btn_run_h => {
+                review_page.run_task();
+            }
+            nwg::Event::OnButtonClick if handle == btn_stop_h => {
+                review_page.stop_task();
+            }
+            nwg::Event::OnButtonClick if handle == btn_remove_h => {
+                review_page.remove_task(&state);
+            }
+            nwg::Event::OnButtonClick if handle == btn_save_only_h => {
+                review_page.save_config_only(&state);
+            }
+            nwg::Event::OnButtonClick if handle == btn_open_dumps_h => {
+                review_page.open_dump_folder(&state);
+            }
+            nwg::Event::OnButtonClick if handle == btn_view_logs_h => {
+                review_page.view_logs();
+            }
+            nwg::Event::OnButtonClick if handle == btn_copy_args_h => {
+                review_page.copy_args(&state);
+            }
+            nwg::Event::OnButtonClick if handle == btn_taskschd_h => {
+                review_page.open_task_scheduler();
+            }
             nwg::Event::OnButtonClick if handle == back_h || handle == next_h => {
                 let cur = current.get();
                 let next = if handle == next_h { cur + 1 } else { cur.saturating_sub(1) };
@@ -164,27 +239,39 @@ pub fn run() {
                             // a stray click there just reselects the current page below)
                 }
 
-                if cur == 0 {
-                    target_page.save(&mut state.cfg.borrow_mut());
-                } else if cur == 1 {
-                    procdump_page.save(&mut state.cfg.borrow_mut());
-                } else if cur == 2 {
-                    task_page.save(&mut state.cfg.borrow_mut());
+                // Every page's save() now returns bool (only Notify's ever
+                // returns false, on invalid email settings). A false abort
+                // leaves `current`, the frames, and the step label untouched
+                // -- the user stays put with the error dialog Notify already
+                // showed, and no partial state change happened.
+                let save_ok = match cur {
+                    0 => target_page.save(&mut state.cfg.borrow_mut()),
+                    1 => procdump_page.save(&mut state.cfg.borrow_mut()),
+                    2 => task_page.save(&mut state.cfg.borrow_mut()),
+                    3 => notify_page.save(&mut state.cfg.borrow_mut()),
+                    4 => review_page.save(&mut state.cfg.borrow_mut()),
+                    5 => about_page.save(&mut state.cfg.borrow_mut()),
+                    _ => true,
+                };
+                if !save_ok {
+                    return;
                 }
-                // Task 11: save arm for pages 3..=LAST_PAGE
 
                 // Load-before-show: a frame is never made visible before its
                 // controls are repopulated for the config it's about to
                 // display (fixed from Task 9's save -> toggle -> load order).
-                if next == 0 {
-                    target_page.load(&state.cfg.borrow());
-                } else if next == 1 {
-                    procdump_page.load(&state.cfg.borrow());
-                    procdump_page.refresh_preview(&state);
-                } else if next == 2 {
-                    task_page.load(&state.cfg.borrow());
+                match next {
+                    0 => target_page.load(&state.cfg.borrow()),
+                    1 => {
+                        procdump_page.load(&state.cfg.borrow());
+                        procdump_page.refresh_preview(&state);
+                    }
+                    2 => task_page.load(&state.cfg.borrow()),
+                    3 => notify_page.load(&state.cfg.borrow()),
+                    4 => review_page.load(&state.cfg.borrow()),
+                    5 => about_page.load(&state.cfg.borrow()),
+                    _ => {}
                 }
-                // Task 11: load arm for pages 3..=LAST_PAGE
 
                 frames[cur].set_visible(false);
                 frames[next].set_visible(true);

@@ -433,7 +433,10 @@ impl ProcDumpPage {
         self.suppress_custom.set(prev);
     }
 
-    pub fn save(&self, cfg: &mut Config) {
+    /// Always succeeds -- ProcDump never blocks navigation. Returns `bool`
+    /// to match the page contract every page shares (only Notify's `save`
+    /// ever returns `false`, on invalid email settings).
+    pub fn save(&self, cfg: &mut Config) -> bool {
         cfg.scenario = match self.cmb_scenario.selection_string() {
             Some(s) if s != "Custom" => s,
             _ => String::new(),
@@ -462,5 +465,6 @@ impl ProcDumpPage {
         cfg.exception_filter_exclude = self.txt_filter_exclude.text();
         cfg.wer_integration = checked(&self.chk_wer);
         cfg.avoid_terminate_timeout = parse_i32(&self.txt_avoid_terminate);
+        true
     }
 }

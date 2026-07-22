@@ -116,7 +116,10 @@ impl TargetPage {
         };
     }
 
-    pub fn save(&self, cfg: &mut Config) {
+    /// Always succeeds -- Target never blocks navigation. Returns `bool` to
+    /// match the page contract every page shares (only Notify's `save` ever
+    /// returns `false`, on invalid email settings).
+    pub fn save(&self, cfg: &mut Config) -> bool {
         let typed = self.txt_process.text().trim().to_string();
         // If the text still equals the last-picked service name, the user
         // hasn't retyped over it -> still targeting that service. Decision
@@ -132,5 +135,6 @@ impl TargetPage {
             cfg.task_name = crate::task::auto_task_name(&typed);
         }
         cfg.target_name = typed;
+        true
     }
 }

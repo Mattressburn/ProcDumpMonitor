@@ -158,8 +158,12 @@ impl TaskPage {
         ));
     }
 
-    pub fn save(&self, cfg: &mut Config) {
+    /// Always succeeds -- Task never blocks navigation. Returns `bool` to
+    /// match the page contract every page shares (only Notify's `save` ever
+    /// returns `false`, on invalid email settings).
+    pub fn save(&self, cfg: &mut Config) -> bool {
         cfg.task_name = crate::task::sanitize_task_name(&self.txt_task_name.text());
+        true
     }
 
     /// Wired to btn_reset_auto's OnButtonClick.
