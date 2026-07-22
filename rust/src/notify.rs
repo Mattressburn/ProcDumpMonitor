@@ -1,3 +1,5 @@
+#![allow(dead_code)] // consumed from Task 8 onward
+
 use crate::config::Config;
 use crate::logger;
 use serde::Serialize;
