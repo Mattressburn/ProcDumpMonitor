@@ -29,6 +29,18 @@ impl<'de> serde::Deserialize<'de> for TargetType {
     }
 }
 
+/// Process-vs-Service decision for the GUI's Target page. Pure and free of
+/// nwg deps (unlike the rest of gui::page_target, which only compiles on
+/// Windows) so it's unit-testable on any host; page_target::save() is the
+/// only caller.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn infer_target_type(typed: &str, picked: Option<&str>) -> TargetType {
+    match picked {
+        Some(name) if name.eq_ignore_ascii_case(typed) => TargetType::Service,
+        _ => TargetType::Process,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct Config {
@@ -249,5 +261,25 @@ mod tests {
         assert_eq!(proc_str, TargetType::Process);
         let svc_str = serde_json::from_str::<TargetType>(r#""Service""#).unwrap();
         assert_eq!(svc_str, TargetType::Service);
+    }
+
+    #[test]
+    fn infer_target_type_typed_only_is_process() {
+        assert_eq!(infer_target_type("MyApp", None), TargetType::Process);
+    }
+
+    #[test]
+    fn infer_target_type_pick_then_leave_is_service() {
+        assert_eq!(infer_target_type("svc1", Some("svc1")), TargetType::Service);
+    }
+
+    #[test]
+    fn infer_target_type_pick_then_edit_is_process() {
+        assert_eq!(infer_target_type("svc1-edited", Some("svc1")), TargetType::Process);
+    }
+
+    #[test]
+    fn infer_target_type_empty_is_process() {
+        assert_eq!(infer_target_type("", None), TargetType::Process);
     }
 }

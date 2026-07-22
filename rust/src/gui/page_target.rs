@@ -119,12 +119,11 @@ impl TargetPage {
     pub fn save(&self, cfg: &mut Config) {
         let typed = self.txt_process.text().trim().to_string();
         // If the text still equals the last-picked service name, the user
-        // hasn't retyped over it -> still targeting that service.
+        // hasn't retyped over it -> still targeting that service. Decision
+        // lives in config::infer_target_type so it's unit-tested on Linux
+        // (this file only compiles on Windows).
         let picked = self.picked_service.borrow();
-        cfg.target_type = match picked.as_deref() {
-            Some(name) if name.eq_ignore_ascii_case(&typed) => TargetType::Service,
-            _ => TargetType::Process,
-        };
+        cfg.target_type = crate::config::infer_target_type(&typed, picked.as_deref());
         // Auto task name follows target when the user hasn't customized it
         // (Task 10's Task page re-checks this same condition).
         if cfg.task_name == crate::task::auto_task_name(&cfg.target_name)

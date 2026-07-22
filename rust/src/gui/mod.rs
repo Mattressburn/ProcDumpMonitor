@@ -1,6 +1,7 @@
 #![cfg(windows)]
+mod page_procdump;
 mod page_target;
-// Task 10 adds: mod page_procdump; mod page_task;
+mod page_task;
 // Task 11 adds: mod page_notify; mod page_review; mod page_about;
 
 use crate::config::Config;
@@ -106,6 +107,17 @@ pub fn run() {
     let btn_refresh_h = target_page.btn_refresh.handle;
     let chk_show_all_h = target_page.chk_show_all.handle;
 
+    // Pages 1/2 aren't visible at startup -- populated on first nav via the
+    // load arm below, same as page 0 above but eagerly.
+    let procdump_page = page_procdump::build(&frames[1], state.clone());
+    let cmb_scenario_h = procdump_page.cmb_scenario.handle;
+    let btn_browse_pd_h = procdump_page.btn_browse_pd.handle;
+    let btn_browse_dir_h = procdump_page.btn_browse_dir.handle;
+
+    let task_page = page_task::build(&frames[2], state.clone());
+    let btn_reset_auto_h = task_page.btn_reset_auto.handle;
+    let btn_copy_cmd_h = task_page.btn_copy_cmd.handle;
+
     let current = Cell::new(0usize);
 
     // Single subclass hook for the whole window: `full_bind_event_handler`
@@ -124,6 +136,26 @@ pub fn run() {
             nwg::Event::OnComboxBoxSelection if handle == cmb_service_h => {
                 target_page.on_service_picked();
             }
+            nwg::Event::OnComboxBoxSelection if handle == cmb_scenario_h => {
+                procdump_page.on_scenario_selected(&state);
+            }
+            nwg::Event::OnButtonClick if handle == btn_browse_pd_h => {
+                procdump_page.browse_procdump_path(window_handle);
+            }
+            nwg::Event::OnButtonClick if handle == btn_browse_dir_h => {
+                procdump_page.browse_dump_dir(window_handle);
+            }
+            nwg::Event::OnButtonClick if handle == btn_reset_auto_h => {
+                task_page.reset_to_auto(&state);
+            }
+            nwg::Event::OnButtonClick if handle == btn_copy_cmd_h => {
+                task_page.copy_command();
+            }
+            nwg::Event::OnTextInput | nwg::Event::OnButtonClick | nwg::Event::OnComboxBoxSelection
+                if procdump_page.is_option_control(handle) =>
+            {
+                procdump_page.on_option_changed(&state);
+            }
             nwg::Event::OnButtonClick if handle == back_h || handle == next_h => {
                 let cur = current.get();
                 let next = if handle == next_h { cur + 1 } else { cur.saturating_sub(1) };
@@ -134,16 +166,28 @@ pub fn run() {
 
                 if cur == 0 {
                     target_page.save(&mut state.cfg.borrow_mut());
+                } else if cur == 1 {
+                    procdump_page.save(&mut state.cfg.borrow_mut());
+                } else if cur == 2 {
+                    task_page.save(&mut state.cfg.borrow_mut());
                 }
-                // Task 10/11: save arm for pages 1..=LAST_PAGE
+                // Task 11: save arm for pages 3..=LAST_PAGE
+
+                // Load-before-show: a frame is never made visible before its
+                // controls are repopulated for the config it's about to
+                // display (fixed from Task 9's save -> toggle -> load order).
+                if next == 0 {
+                    target_page.load(&state.cfg.borrow());
+                } else if next == 1 {
+                    procdump_page.load(&state.cfg.borrow());
+                    procdump_page.refresh_preview(&state);
+                } else if next == 2 {
+                    task_page.load(&state.cfg.borrow());
+                }
+                // Task 11: load arm for pages 3..=LAST_PAGE
 
                 frames[cur].set_visible(false);
                 frames[next].set_visible(true);
-
-                if next == 0 {
-                    target_page.load(&state.cfg.borrow());
-                }
-                // Task 10/11: load arm for pages 1..=LAST_PAGE
 
                 step_label.set_text(&format!(
                     "Step {} of {} - {}",
