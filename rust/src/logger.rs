@@ -1,3 +1,4 @@
+#![allow(dead_code)] // consumed from Task 8 onward
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;

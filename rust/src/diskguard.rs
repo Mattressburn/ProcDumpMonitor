@@ -1,3 +1,4 @@
+#![allow(dead_code)] // consumed from Task 8 onward
 /// (ok, free_mb). min<=0 disables (true, 0). Fails open on error (true, -1).
 #[cfg(windows)]
 pub fn check_free_space(path: &std::path::Path, min_free_mb: i64) -> (bool, i64) {

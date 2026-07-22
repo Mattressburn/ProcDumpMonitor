@@ -1,5 +1,6 @@
 #![allow(dead_code)] // consumed from Task 8 onward
 
+#[cfg(windows)]
 use crate::config::Config;
 
 pub fn sanitize_task_name(name: &str) -> String {
