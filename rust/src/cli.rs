@@ -25,7 +25,8 @@ ProcDumpMonitor.exe <verb> [--config <path>]
   exit codes: 0 = success, 1 = failure, 2 = bad arguments";
 
 pub fn parse(args: &[String]) -> Result<Verb, String> {
-    let verb = args[0].trim_start_matches('-').to_ascii_lowercase();
+    let first = args.first().ok_or("no verb given")?;
+    let verb = first.trim_start_matches('-').to_ascii_lowercase();
     let mut config = crate::paths::config_path();
     let mut i = 1;
     while i < args.len() {
@@ -135,5 +136,10 @@ mod tests {
     fn bad_verb_and_missing_config_value_error() {
         assert!(parse(&s(&["--frobnicate"])).is_err());
         assert!(parse(&s(&["install", "--config"])).is_err());
+    }
+
+    #[test]
+    fn empty_args_is_err_not_panic() {
+        assert!(parse(&[]).is_err());
     }
 }
