@@ -5,11 +5,30 @@ use std::path::Path;
 
 pub const CURRENT_VERSION: i32 = 3;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 pub enum TargetType {
     #[default]
     Process,
     Service,
+}
+
+impl<'de> serde::Deserialize<'de> for TargetType {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Int(i64),
+            Str(String),
+        }
+        Ok(match Raw::deserialize(d)? {
+            Raw::Int(1) => TargetType::Service,
+            Raw::Int(_) => TargetType::Process,
+            Raw::Str(s) if s == "Service" => TargetType::Service,
+            Raw::Str(s) if s == "Process" => TargetType::Process,
+            Raw::Str(s) => return Err(D::Error::custom(format!("bad TargetType: {s}"))),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,5 +212,41 @@ mod tests {
         // corrupt file -> defaults (C# behavior)
         std::fs::write(&p, "{not json").unwrap();
         assert_eq!(Config::load(&p).scenario, "Crash capture");
+    }
+
+    #[test]
+    fn loads_csharp_authored_config_fixture() {
+        // C# serializes TargetType as integer (0=Process, 1=Service)
+        // and omits fields at default via WhenWritingDefault
+        let json = r#"{
+  "ConfigVersion": 3,
+  "TargetName": "SoftwareHouse.CrossFire.Server",
+  "TargetType": 1,
+  "MemoryCommitMB": 2048,
+  "MinFreeDiskMB": 5120,
+  "MaxLogSizeMB": 10,
+  "DumpRetentionMaxGB": 0.0,
+  "SmtpPort": 25,
+  "TaskName": "ProcDump Monitor"
+}"#;
+        let c: Config = serde_json::from_str(json).expect("failed to parse C# config");
+        assert_eq!(c.target_type, TargetType::Service);
+        assert_eq!(c.target_name, "SoftwareHouse.CrossFire.Server");
+        assert_eq!(c.memory_commit_mb, 2048);
+        assert_eq!(c.min_free_disk_mb, 5120);
+        // defaults for omitted fields
+        assert_eq!(c.dump_type, "Full");
+        assert!(c.dump_on_exception);
+        assert_eq!(c.scenario, "Crash capture");
+
+        // Also test integer 0 and string forms
+        let proc_int = serde_json::from_str::<TargetType>(r#"0"#).unwrap();
+        assert_eq!(proc_int, TargetType::Process);
+        let svc_int = serde_json::from_str::<TargetType>(r#"1"#).unwrap();
+        assert_eq!(svc_int, TargetType::Service);
+        let proc_str = serde_json::from_str::<TargetType>(r#""Process""#).unwrap();
+        assert_eq!(proc_str, TargetType::Process);
+        let svc_str = serde_json::from_str::<TargetType>(r#""Service""#).unwrap();
+        assert_eq!(svc_str, TargetType::Service);
     }
 }
