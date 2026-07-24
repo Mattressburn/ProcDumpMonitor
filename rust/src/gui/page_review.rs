@@ -3,6 +3,8 @@ use native_windows_gui as nwg;
 use std::process::Command;
 use std::rc::Rc;
 
+use super::theme;
+
 pub struct ReviewPage {
     // Kept alive only so lbl_banner's bold font isn't freed -- Font's Drop
     // destroys the HFONT, which would silently un-bold the label even
@@ -24,105 +26,157 @@ pub struct ReviewPage {
     pub lst_log: nwg::ListBox<String>,
 }
 
-pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ReviewPage {
-    let mut bold_font = nwg::Font::default();
-    let _ = nwg::Font::builder().family("Segoe UI").weight(700).build(&mut bold_font);
+// Grid constants (logical px, relative to the 680x456 page frame; see
+// .superpowers/sdd/design-system.md). PAD=32 / content width 616 match the
+// spec's full-width rule for buttons and preview/summary boxes on this
+// field-less, action-heavy page -- there's no label/field column split here.
+const PAD: i32 = 32;
+const CONTENT_W: i32 = 616; // 680 - 2*PAD
+const BTN_H: i32 = 30;
+const BTN_GAP: i32 = 10;
 
+const SUMMARY_Y: i32 = PAD;
+const SUMMARY_H: i32 = 160;
+const ROW1_Y: i32 = SUMMARY_Y + SUMMARY_H + 12; // primary task actions row
+const ROW2_Y: i32 = ROW1_Y + BTN_H + 12; // secondary actions row
+const BANNER_Y: i32 = ROW2_Y + BTN_H + 16;
+const BANNER_H: i32 = 22;
+const LOG_Y: i32 = BANNER_Y + BANNER_H + 8;
+const LOG_H: i32 = 118; // fills to the frame's bottom margin (see design-system.md)
+
+pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ReviewPage {
+    // Themed Segoe UI Semibold at body size -- also fixes the original's
+    // unspecified-size bold Font, which silently fell back to a default
+    // size that didn't match the 15px body font used everywhere else.
+    let bold_font = theme::semibold(15);
+
+    // ---- Summary: full width, top (design-system.md "Summary area
+    // full-width at top") -----------------------------------------------
     let mut txt_summary = nwg::TextBox::default();
     nwg::TextBox::builder()
-        .position((10, 8))
-        .size((740, 180))
+        .position((PAD, SUMMARY_Y))
+        .size((CONTENT_W, SUMMARY_H))
         .readonly(true)
         .parent(parent)
         .build(&mut txt_summary)
         .unwrap();
 
+    // ---- Primary task actions row: Create/Update, Run, Stop, Remove -------
+    // x of each button = previous button's x + width + BTN_GAP, so the row
+    // stays gap-consistent if a caption's width ever needs to change.
+    let (create_w, run_w, stop_w) = (150, 150, 120);
+    let create_x = PAD;
+    let run_x = create_x + create_w + BTN_GAP;
+    let stop_x = run_x + run_w + BTN_GAP;
+    let remove_x = stop_x + stop_w + BTN_GAP;
+
     let mut btn_create = nwg::Button::default();
     nwg::Button::builder()
         .text("Create Task")
-        .position((10, 198))
-        .size((110, 28))
+        .position((create_x, ROW1_Y))
+        .size((create_w, BTN_H))
         .parent(parent)
         .build(&mut btn_create)
         .unwrap();
     let mut btn_run = nwg::Button::default();
     nwg::Button::builder()
         .text("Run Task Now")
-        .position((130, 198))
-        .size((110, 28))
+        .position((run_x, ROW1_Y))
+        .size((run_w, BTN_H))
         .parent(parent)
         .build(&mut btn_run)
         .unwrap();
     let mut btn_stop = nwg::Button::default();
     nwg::Button::builder()
         .text("Stop Task")
-        .position((250, 198))
-        .size((110, 28))
+        .position((stop_x, ROW1_Y))
+        .size((stop_w, BTN_H))
         .parent(parent)
         .build(&mut btn_stop)
         .unwrap();
     let mut btn_remove = nwg::Button::default();
     nwg::Button::builder()
         .text("Remove Task")
-        .position((370, 198))
-        .size((110, 28))
+        .position((remove_x, ROW1_Y))
+        .size((140, BTN_H))
         .parent(parent)
         .build(&mut btn_remove)
         .unwrap();
 
+    // ---- Secondary actions row: Save config only, Open dump folder, View
+    // logs, Copy args, Task Scheduler. Captions shortened from the original
+    // ("Save Config Only" -> "Save Config", "Copy ProcDump Cmd" -> "Copy
+    // Args", "Open Task Scheduler" -> "Task Scheduler") -- five buttons must
+    // share the page's 616px content width, and design-system.md permits
+    // wording changes for layout fit; every width below is sized with
+    // headroom over its caption at body-font size (~7px/char), so nothing
+    // clips. -------------------------------------------------------------
+    let (save_w, dumps_w, logs_w, args_w) = (110, 128, 110, 110);
+    let save_x = PAD;
+    let dumps_x = save_x + save_w + BTN_GAP;
+    let logs_x = dumps_x + dumps_w + BTN_GAP;
+    let args_x = logs_x + logs_w + BTN_GAP;
+    let taskschd_x = args_x + args_w + BTN_GAP;
+
     let mut btn_save_only = nwg::Button::default();
     nwg::Button::builder()
-        .text("Save Config Only")
-        .position((10, 234))
-        .size((130, 28))
+        .text("Save Config")
+        .position((save_x, ROW2_Y))
+        .size((save_w, BTN_H))
         .parent(parent)
         .build(&mut btn_save_only)
         .unwrap();
     let mut btn_open_dumps = nwg::Button::default();
     nwg::Button::builder()
         .text("Open Dump Folder")
-        .position((150, 234))
-        .size((130, 28))
+        .position((dumps_x, ROW2_Y))
+        .size((dumps_w, BTN_H))
         .parent(parent)
         .build(&mut btn_open_dumps)
         .unwrap();
     let mut btn_view_logs = nwg::Button::default();
     nwg::Button::builder()
         .text("View Logs")
-        .position((290, 234))
-        .size((100, 28))
+        .position((logs_x, ROW2_Y))
+        .size((logs_w, BTN_H))
         .parent(parent)
         .build(&mut btn_view_logs)
         .unwrap();
     let mut btn_copy_args = nwg::Button::default();
     nwg::Button::builder()
-        .text("Copy ProcDump Cmd")
-        .position((400, 234))
-        .size((150, 28))
+        .text("Copy Args")
+        .position((args_x, ROW2_Y))
+        .size((args_w, BTN_H))
         .parent(parent)
         .build(&mut btn_copy_args)
         .unwrap();
     let mut btn_taskschd = nwg::Button::default();
     nwg::Button::builder()
-        .text("Open Task Scheduler")
-        .position((560, 234))
-        .size((170, 28))
+        .text("Task Scheduler")
+        .position((taskschd_x, ROW2_Y))
+        .size((118, BTN_H))
         .parent(parent)
         .build(&mut btn_taskschd)
         .unwrap();
 
+    // ---- Status banner + activity log (full width) ------------------------
     let mut lbl_banner = nwg::Label::default();
     nwg::Label::builder()
         .text("")
-        .position((10, 272))
-        .size((740, 22))
+        .position((PAD, BANNER_Y))
+        .size((CONTENT_W, BANNER_H))
         .font(Some(&bold_font))
         .parent(parent)
         .build(&mut lbl_banner)
         .unwrap();
 
     let mut lst_log = nwg::ListBox::default();
-    nwg::ListBox::builder().position((10, 300)).size((740, 160)).parent(parent).build(&mut lst_log).unwrap();
+    nwg::ListBox::builder()
+        .position((PAD, LOG_Y))
+        .size((CONTENT_W, LOG_H))
+        .parent(parent)
+        .build(&mut lst_log)
+        .unwrap();
 
     ReviewPage {
         bold_font,
