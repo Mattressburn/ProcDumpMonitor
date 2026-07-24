@@ -21,6 +21,7 @@ Add-Type -Namespace W -Name U32 -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
 [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, System.UIntPtr e);
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);
+[DllImport("user32.dll")] public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, System.IntPtr lParam, uint flags, uint timeoutMs, out System.UIntPtr result);
 '@
 
 $Exe = (Resolve-Path $Exe).Path
@@ -75,8 +76,21 @@ function Type-Text([object]$el, [string]$text) {
     [System.Windows.Forms.SendKeys]::SendWait("^a{DEL}$text")
     Start-Sleep -Milliseconds 300
 }
+# Block until the GUI thread has drained its queue (finished any synchronous
+# handler such as the service enumeration) or 5s elapses. WM_NULL is a no-op the
+# thread only answers once it's idle, so a completed round-trip == UI settled --
+# more reliable than a fixed sleep that races a mid-flight repaint.
+function Wait-Idle {
+    $res = [System.UIntPtr]::Zero
+    # 0x0000 = WM_NULL; flags 0x0002 = SMTO_ABORTIFHUNG.
+    [W.U32]::SendMessageTimeout($script:hwnd, 0x0000, [UIntPtr]::Zero, [IntPtr]::Zero, 0x0002, 5000, [ref]$res) | Out-Null
+}
 function Shot([string]$name) {
-    Start-Sleep -Milliseconds 300
+    # Insurance on every capture: bring the window forward and let its paint
+    # settle before grabbing pixels, so no shot races a repaint or grabs black.
+    [W.U32]::SetForegroundWindow($script:hwnd) | Out-Null
+    Wait-Idle
+    Start-Sleep -Milliseconds 250
     $r = $win.Current.BoundingRectangle
     $bmp = New-Object System.Drawing.Bitmap([int]$r.Width, [int]$r.Height)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -96,9 +110,9 @@ Shot '01-target'
 $edit = Require (Find-El 'Edit' '*') "process-name edit"
 Type-Text $edit 'notepad'; Write-Host "type:  'notepad' into process name"
 $show = Find-El 'Button' '*Show all*'
-if ($show) { Click-El $show; Write-Host "click: show-all checkbox" } else { Write-Host "warn:  show-all checkbox not found" }
+if ($show) { Click-El $show; Wait-Idle; Write-Host "click: show-all checkbox" } else { Write-Host "warn:  show-all checkbox not found" }
 $refresh = Find-El 'Button' '*efresh*'
-if ($refresh) { Click-El $refresh; Write-Host "click: refresh services"; Start-Sleep -Milliseconds 800 } else { Write-Host "warn:  refresh button not found" }
+if ($refresh) { Click-El $refresh; Wait-Idle; Write-Host "click: refresh services" } else { Write-Host "warn:  refresh button not found" }
 Shot '01-target-filled'
 if ($back.Current.IsEnabled) { Fail "Back enabled on page 1" }
 

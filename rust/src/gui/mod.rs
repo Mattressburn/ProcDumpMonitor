@@ -74,13 +74,24 @@ pub fn run() {
     let embed = nwg::EmbedResource::load(None).ok();
     let icon = embed.as_ref().and_then(|e| e.icon(1, None));
 
+    // Built WITHOUT the VISIBLE flag on purpose: every sidebar/content static
+    // is created and painted the instant it's built, and the theme registry
+    // (theme.rs) that decides its text/background color is populated by the
+    // register_*() call that runs on the NEXT line after each build(). If the
+    // window is visible during construction, that first paint happens before
+    // the register call and WM_CTLCOLORSTATIC reads an empty registry -> the
+    // control keeps a wrong (white/near-black) color forever, because nothing
+    // invalidates it again (the six step labels only looked right because nav
+    // re-set_font()s them, forcing a repaint). Showing the window once, after
+    // everything is built AND registered, makes every control's first real
+    // paint query the fully-populated registry.
     let mut window = nwg::Window::default();
     nwg::Window::builder()
         .size((920, 640))
         .center(true)
         .title("ProcDump Monitor")
         .icon(icon.as_ref())
-        .flags(nwg::WindowFlags::WINDOW | nwg::WindowFlags::VISIBLE)
+        .flags(nwg::WindowFlags::WINDOW)
         .build(&mut window)
         .expect("window");
     let window_handle = window.handle;
@@ -415,6 +426,11 @@ pub fn run() {
             _ => {}
         }
     });
+
+    // Everything is built and registered with the theme: reveal the window so
+    // each control's first paint queries the fully-populated color registry
+    // (see the WindowFlags::WINDOW comment where the window is built).
+    window.set_visible(true);
 
     nwg::dispatch_thread_events();
     nwg::unbind_event_handler(&handler);

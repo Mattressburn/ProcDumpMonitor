@@ -174,6 +174,13 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     const FULL_W: i32 = 616; // 680 frame width - 2*32 padding
     const ROW_H: i32 = 34; // dense-page minimum row pitch
     const FIELD_H: i32 = 26;
+    // Shared wizard field column: PAD(32) + label col(190) + gap(10). Every
+    // row's FIRST control starts here so ProcDump's field column lines up with
+    // the single column all the other pages use (frame-rel x=232). Labels live
+    // in the label column (x=32, w<=190). Packed rows flow extra controls
+    // rightward from 232 and must stay inside the right margin (x <= 648);
+    // TextInputs scroll rather than clip, so they're sized tight to make room.
+    const FIELD_X: i32 = 232;
 
     let mut y = PAD;
 
@@ -181,11 +188,8 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     captions.push(mk_header(parent, "Scenario", y, &header_font));
     y += 22 + 8;
 
-    captions.push(mk_label(parent, "Scenario:", (PAD, y - 2), (70, 20)));
-    // Widened well past the longest preset name ("Memory threshold capture")
-    // -- the row has plenty of spare width now that lbl_bitness moved to its
-    // own hint line below.
-    let cmb_scenario = mk_combo(parent, (PAD + 78, y), (260, 26));
+    captions.push(mk_label(parent, "Scenario:", (PAD, y - 2), (190, 20)));
+    let cmb_scenario = mk_combo(parent, (FIELD_X, y), (300, 26));
     {
         let mut names: Vec<String> = Preset::all().iter().map(|p| p.name.to_string()).collect();
         names.push("Custom".into());
@@ -212,71 +216,72 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     captions.push(mk_header(parent, "Configuration", y, &header_font));
     y += 22 + 8;
 
-    captions.push(mk_label(parent, "ProcDump path:", (PAD, y - 2), (110, 20)));
-    let txt_procdump_path = mk_text(parent, (PAD + 118, y), (350, FIELD_H), false);
-    let btn_browse_pd = mk_button(parent, "Browse...", (PAD + 118 + 350 + 8, y - 2), (110, 30));
+    captions.push(mk_label(parent, "ProcDump path:", (PAD, y - 2), (190, 20)));
+    let txt_procdump_path = mk_text(parent, (FIELD_X, y), (290, FIELD_H), false);
+    let btn_browse_pd = mk_button(parent, "Browse...", (FIELD_X + 298, y - 2), (110, 30));
     y += ROW_H;
 
-    captions.push(mk_label(parent, "Dump directory:", (PAD, y - 2), (120, 20)));
-    let txt_dump_dir = mk_text(parent, (PAD + 128, y), (330, FIELD_H), false);
-    let btn_browse_dir = mk_button(parent, "Browse...", (PAD + 128 + 330 + 8, y - 2), (110, 30));
+    captions.push(mk_label(parent, "Dump directory:", (PAD, y - 2), (190, 20)));
+    let txt_dump_dir = mk_text(parent, (FIELD_X, y), (290, FIELD_H), false);
+    let btn_browse_dir = mk_button(parent, "Browse...", (FIELD_X + 298, y - 2), (110, 30));
     y += ROW_H;
 
-    // Checkbox widths below reserve ~18px for the win32 checkbox glyph on
-    // top of ~7px/char for the caption text -- narrower boxes clip the
-    // caption (a static caption, so it can't scroll like a TextInput).
-    captions.push(mk_label(parent, "Dump type:", (PAD, y - 2), (72, 20)));
-    let cmb_dump_type = mk_combo(parent, (PAD + 80, y), (80, 26));
+    // Dump type combo + the two dump-*trigger* checkboxes pack from x=232.
+    // The third trigger, -t, doesn't fit here once the row starts at the
+    // shared column, so it reflows onto the CPU row below (which has slack
+    // after its four tiny numeric fields).
+    captions.push(mk_label(parent, "Dump type:", (PAD, y - 2), (190, 20)));
+    let cmb_dump_type = mk_combo(parent, (FIELD_X, y), (95, 26));
     cmb_dump_type.set_collection(DUMP_TYPES.iter().map(|s| s.to_string()).collect());
-    let chk_exception = mk_check(parent, "-e unhandled exception", (PAD + 80 + 80 + 8, y), (180, 22));
-    let chk_hang = mk_check(parent, "-h hung window", (PAD + 80 + 80 + 8 + 180 + 8, y), (120, 22));
-    let chk_terminate =
-        mk_check(parent, "-t on terminate", (PAD + 80 + 80 + 8 + 180 + 8 + 120 + 8, y), (130, 22));
+    let chk_exception = mk_check(parent, "-e unhandled exception", (FIELD_X + 103, y), (180, 22));
+    let chk_hang = mk_check(parent, "-h hung window", (FIELD_X + 291, y), (118, 22));
     y += ROW_H;
 
-    captions.push(mk_label(parent, "CPU% / Low% / Dur(s) / Max:", (PAD, y - 2), (180, 20)));
-    let cx = PAD + 188;
-    let txt_cpu = mk_text(parent, (cx, y), (40, FIELD_H), false);
-    let txt_cpu_low = mk_text(parent, (cx + 48, y), (40, FIELD_H), false);
-    let txt_cpu_dur = mk_text(parent, (cx + 96, y), (40, FIELD_H), false);
-    let txt_count = mk_text(parent, (cx + 144, y), (40, FIELD_H), false);
-    captions.push(mk_label(parent, "Incl (-f):", (cx + 192, y - 2), (80, 20)));
-    let txt_filter_include = mk_text(parent, (cx + 192 + 88, y), (90, FIELD_H), false);
+    captions.push(mk_label(parent, "CPU% / Low% / Dur / Max:", (PAD, y - 2), (190, 20)));
+    let txt_cpu = mk_text(parent, (FIELD_X, y), (40, FIELD_H), false);
+    let txt_cpu_low = mk_text(parent, (FIELD_X + 46, y), (40, FIELD_H), false);
+    let txt_cpu_dur = mk_text(parent, (FIELD_X + 92, y), (40, FIELD_H), false);
+    let txt_count = mk_text(parent, (FIELD_X + 138, y), (40, FIELD_H), false);
+    // Reflowed here from the Dump type row (see above).
+    let chk_terminate = mk_check(parent, "-t on terminate", (FIELD_X + 184, y), (118, 22));
+    captions.push(mk_label(parent, "Incl (-f):", (FIELD_X + 306, y - 2), (52, 20)));
+    let txt_filter_include = mk_text(parent, (FIELD_X + 360, y), (54, FIELD_H), false);
     y += ROW_H;
 
-    captions.push(mk_label(parent, "Commit MB (-m):", (PAD, y - 2), (120, 20)));
-    let txt_mem = mk_text(parent, (PAD + 128, y), (70, FIELD_H), false);
-    let chk_clone = mk_check(parent, "-r clone", (PAD + 128 + 70 + 8, y), (80, 22));
-    let chk_avoid = mk_check(parent, "-a avoid outage", (PAD + 128 + 70 + 8 + 80 + 8, y), (130, 22));
-    let chk_overwrite =
-        mk_check(parent, "-o overwrite", (PAD + 128 + 70 + 8 + 80 + 8 + 130 + 8, y), (110, 22));
+    captions.push(mk_label(parent, "Commit MB (-m):", (PAD, y - 2), (190, 20)));
+    let txt_mem = mk_text(parent, (FIELD_X, y), (66, FIELD_H), false);
+    let chk_clone = mk_check(parent, "-r clone", (FIELD_X + 72, y), (78, 22));
+    let chk_avoid = mk_check(parent, "-a avoid outage", (FIELD_X + 156, y), (126, 22));
+    let chk_overwrite = mk_check(parent, "-o overwrite", (FIELD_X + 288, y), (110, 22));
     y += ROW_H;
 
-    // per-CPU moved here from the CPU row above -- that row had no spare
-    // width left once its widths were corrected for the checkbox-glyph
-    // reserve (see comment above); this row has room to spare.
-    let chk_wait = mk_check(parent, "-w wait for launch", (PAD, y), (150, 22));
-    let chk_wer = mk_check(parent, "-wer WER integration", (PAD + 158, y), (170, 22));
-    let chk_cpu_per_unit = mk_check(parent, "-u per-CPU", (PAD + 158 + 178, y), (90, 22));
-    captions.push(mk_label(parent, "Avoid term (s):", (PAD + 158 + 178 + 98, y - 2), (110, 20)));
-    let txt_avoid_terminate = mk_text(parent, (PAD + 158 + 178 + 98 + 118, y), (60, FIELD_H), false);
+    // Launch/integration checkboxes, packed from the shared field column
+    // (F2b: this row used to start at the label column).
+    let chk_wait = mk_check(parent, "-w wait for launch", (FIELD_X, y), (140, 22));
+    let chk_wer = mk_check(parent, "-wer WER integration", (FIELD_X + 146, y), (162, 22));
+    let chk_cpu_per_unit = mk_check(parent, "-u per-CPU", (FIELD_X + 314, y), (96, 22));
     y += ROW_H;
 
-    captions.push(mk_label(parent, "Restart delay (s):", (PAD, y - 2), (130, 20)));
-    let txt_restart_delay = mk_text(parent, (PAD + 138, y), (70, FIELD_H), false);
-    captions.push(mk_label(parent, "Min free disk MB:", (PAD + 138 + 78, y - 2), (130, 20)));
-    let txt_min_disk = mk_text(parent, (PAD + 138 + 78 + 138, y), (80, FIELD_H), false);
-    captions.push(mk_label(parent, "Excl (-fx):", (PAD + 138 + 78 + 138 + 88, y - 2), (90, 20)));
-    let txt_filter_exclude = mk_text(parent, (PAD + 138 + 78 + 138 + 88 + 98, y), (70, FIELD_H), false);
+    captions.push(mk_label(parent, "Restart delay (s):", (PAD, y - 2), (190, 20)));
+    let txt_restart_delay = mk_text(parent, (FIELD_X, y), (64, FIELD_H), false);
+    captions.push(mk_label(parent, "Min free disk MB:", (FIELD_X + 70, y - 2), (140, 20)));
+    let txt_min_disk = mk_text(parent, (FIELD_X + 214, y), (66, FIELD_H), false);
+    captions.push(mk_label(parent, "Excl (-fx):", (FIELD_X + 286, y - 2), (66, 20)));
+    let txt_filter_exclude = mk_text(parent, (FIELD_X + 356, y), (56, FIELD_H), false);
     y += ROW_H;
 
-    captions.push(mk_label(parent, "Perf counter (-p):", (PAD, y - 2), (130, 20)));
-    let txt_perf_counter = mk_text(parent, (PAD + 138, y), (150, FIELD_H), false);
-    captions.push(mk_label(parent, "Perf threshold (-pl):", (PAD + 138 + 158, y - 2), (150, 20)));
-    let txt_perf_threshold = mk_text(parent, (PAD + 138 + 158 + 158, y), (150, FIELD_H), false);
+    // Perf counter/threshold pair, plus the reflowed Avoid-term pair (moved
+    // off the launch-checkbox row, which no longer has room once it starts at
+    // the shared field column).
+    captions.push(mk_label(parent, "Perf counter (-p):", (PAD, y - 2), (190, 20)));
+    let txt_perf_counter = mk_text(parent, (FIELD_X, y), (88, FIELD_H), false);
+    captions.push(mk_label(parent, "Threshold (-pl):", (FIELD_X + 96, y - 2), (116, 20)));
+    let txt_perf_threshold = mk_text(parent, (FIELD_X + 216, y), (70, FIELD_H), false);
+    captions.push(mk_label(parent, "Avoid (s):", (FIELD_X + 292, y - 2), (72, 20)));
+    let txt_avoid_terminate = mk_text(parent, (FIELD_X + 368, y), (44, FIELD_H), false);
     y += ROW_H;
-    // Final row bottom sits at ~440 logical px, comfortably inside the
-    // 456-tall page frame.
+    // Final row bottom sits at ~452 logical px, inside the 456-tall frame;
+    // the rightmost control (avoid field) ends at x=644, inside the 648 margin.
     let _ = y;
 
     let option_handles = vec![

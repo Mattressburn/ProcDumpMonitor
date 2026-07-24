@@ -106,6 +106,15 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> NotifyPage 
     let hdr_font = super::theme::semibold(15);
     let mut captions: Vec<nwg::Label> = Vec::new();
 
+    // Shared wizard grid: labels in the label column (x=32, w<=190), every
+    // field's left edge on the shared field column (x=232) so this page lines
+    // up with the single column the other pages use. Captions that would
+    // overrun 190px are shortened (the semicolon note folded into "(; sep)")
+    // rather than pushing the field off the column. Packed second fields flow
+    // right from 232 and stay inside the right margin (x<=648). Header rows
+    // sit >=34px above the first field row (dense-page pitch floor).
+    const FX: i32 = 232;
+
     // ---- Email section ------------------------------------------------
     // Header shares its row with the section's own enable toggle -- saves a
     // full row in a page that's otherwise too tall for the 456-high frame.
@@ -114,40 +123,40 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> NotifyPage 
         l.set_font(Some(&hdr_font));
         l
     });
-    let chk_email = mk_check(parent, "Enable email notifications", (232, 32), (416, 22));
+    let chk_email = mk_check(parent, "Enable email notifications", (FX, 32), (416, 22));
 
     // Row: SMTP server / Port / Use SSL.
-    captions.push(mk_label(parent, "SMTP server:", (32, 60), (110, 20)));
-    let txt_smtp = mk_text(parent, (232, 62), (150, 26));
-    captions.push(mk_label(parent, "Port:", (392, 60), (50, 20)));
-    let txt_port = mk_text(parent, (452, 62), (50, 26));
-    let chk_ssl = mk_check(parent, "Use SSL/TLS", (512, 62), (130, 22));
+    captions.push(mk_label(parent, "SMTP server:", (32, 64), (190, 20)));
+    let txt_smtp = mk_text(parent, (FX, 66), (150, 26));
+    captions.push(mk_label(parent, "Port:", (392, 64), (40, 20)));
+    let txt_port = mk_text(parent, (438, 66), (50, 26));
+    let chk_ssl = mk_check(parent, "Use SSL/TLS", (500, 66), (130, 22));
 
     // Row: From address / SMTP username (paired only for space -- distinct
-    // fields, each with its own label).
-    captions.push(mk_label(parent, "From address:", (32, 94), (130, 20)));
-    let txt_from = mk_text(parent, (232, 96), (150, 26));
-    captions.push(mk_label(parent, "SMTP username:", (392, 94), (140, 20)));
-    let txt_user = mk_text(parent, (542, 96), (106, 26));
+    // fields, each with its own label; first field still on the shared column).
+    captions.push(mk_label(parent, "From address:", (32, 98), (190, 20)));
+    let txt_from = mk_text(parent, (FX, 100), (160, 26));
+    captions.push(mk_label(parent, "SMTP username:", (400, 98), (140, 20)));
+    let txt_user = mk_text(parent, (548, 100), (100, 26));
 
-    captions.push(mk_label(parent, "To (semicolon-separated):", (32, 128), (240, 20)));
-    let txt_to = mk_text(parent, (282, 130), (366, 26));
+    captions.push(mk_label(parent, "To (; separated):", (32, 132), (190, 20)));
+    let txt_to = mk_text(parent, (FX, 134), (416, 26));
 
-    captions.push(mk_label(parent, "CC (semicolon-separated):", (32, 162), (240, 20)));
-    let txt_cc = mk_text(parent, (282, 164), (366, 26));
+    captions.push(mk_label(parent, "CC (; separated):", (32, 166), (190, 20)));
+    let txt_cc = mk_text(parent, (FX, 168), (416, 26));
 
     // Row: SMTP password / Validate / Send Test.
-    captions.push(mk_label(parent, "SMTP password:", (32, 196), (130, 20)));
+    captions.push(mk_label(parent, "SMTP password:", (32, 200), (190, 20)));
     let mut txt_password = nwg::TextInput::default();
     nwg::TextInput::builder()
-        .position((232, 198))
+        .position((FX, 202))
         .size((120, 26))
         .password(Some('\u{2022}'))
         .parent(parent)
         .build(&mut txt_password)
         .unwrap();
-    let btn_validate = mk_button(parent, "Validate SMTP", (362, 198), (125, 30));
-    let btn_test_email = mk_button(parent, "Send Test Email", (497, 198), (150, 30));
+    let btn_validate = mk_button(parent, "Validate SMTP", (362, 202), (125, 30));
+    let btn_test_email = mk_button(parent, "Send Test Email", (495, 202), (150, 30));
 
     // ---- Webhook section ------------------------------------------------
     captions.push({
@@ -155,31 +164,31 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> NotifyPage 
         l.set_font(Some(&hdr_font));
         l
     });
-    let chk_webhook = mk_check(parent, "Enable webhook notifications", (232, 244), (416, 22));
+    let chk_webhook = mk_check(parent, "Enable webhook notifications", (FX, 244), (416, 22));
 
-    captions.push(mk_label(parent, "Webhook URL:", (32, 272), (120, 20)));
-    let txt_webhook = mk_text(parent, (232, 274), (408, 26));
+    captions.push(mk_label(parent, "Webhook URL:", (32, 278), (190, 20)));
+    let txt_webhook = mk_text(parent, (FX, 280), (416, 26));
 
     // ---- Maintenance fields ---------------------------------------------
     // No section header here (the brief names only Email/Webhook as
     // sections) -- kept as tight rows purely to fit the fixed 456-tall frame.
-    captions.push(mk_label(parent, "Max log size (MB):", (32, 306), (175, 20)));
-    let txt_log_size = mk_text(parent, (217, 308), (55, 26));
-    captions.push(mk_label(parent, "Max log files:", (282, 306), (140, 20)));
-    let txt_log_files = mk_text(parent, (432, 308), (55, 26));
+    captions.push(mk_label(parent, "Max log size (MB):", (32, 312), (190, 20)));
+    let txt_log_size = mk_text(parent, (FX, 314), (55, 26));
+    captions.push(mk_label(parent, "Max log files:", (295, 312), (120, 20)));
+    let txt_log_files = mk_text(parent, (423, 314), (55, 26));
 
-    captions.push(mk_label(parent, "Dump retention (days):", (32, 340), (200, 20)));
-    let txt_ret_days = mk_text(parent, (242, 342), (55, 26));
-    captions.push(mk_label(parent, "Dump retention max (GB):", (307, 340), (230, 20)));
-    let txt_ret_gb = mk_text(parent, (547, 342), (55, 26));
+    captions.push(mk_label(parent, "Retention (days):", (32, 346), (190, 20)));
+    let txt_ret_days = mk_text(parent, (FX, 348), (55, 26));
+    captions.push(mk_label(parent, "Max size (GB):", (295, 346), (110, 20)));
+    let txt_ret_gb = mk_text(parent, (413, 348), (55, 26));
 
-    captions.push(mk_label(parent, "Dump stability timeout (s):", (32, 374), (245, 20)));
-    let txt_stab_timeout = mk_text(parent, (287, 376), (60, 26));
+    captions.push(mk_label(parent, "Stability timeout (s):", (32, 380), (190, 20)));
+    let txt_stab_timeout = mk_text(parent, (FX, 382), (60, 26));
 
     let mut lbl_notify_status = nwg::Label::default();
     nwg::Label::builder()
         .text("")
-        .position((32, 408))
+        .position((32, 414))
         .size((616, 40))
         .parent(parent)
         .build(&mut lbl_notify_status)
