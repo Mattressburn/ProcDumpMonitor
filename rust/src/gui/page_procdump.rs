@@ -4,20 +4,21 @@ use native_windows_gui as nwg;
 use std::cell::Cell;
 use std::rc::Rc;
 
+use super::theme;
+
 const DUMP_TYPES: [&str; 4] = ["Full", "MiniPlus", "Mini", "ThreadDump"];
 
 pub struct ProcDumpPage {
-    // Kept alive only for their Drop side effect (destroys the win32 window);
-    // never read again after build().
+    // Kept alive only so the section-header font isn't freed out from under
+    // the header Labels still displaying it (Font's Drop frees the HFONT;
+    // see page_task.rs's `bold_font` for the same pattern).
     #[allow(dead_code)]
-    tabs: nwg::TabsContainer,
-    #[allow(dead_code)]
-    tab_basic: nwg::Tab,
-    #[allow(dead_code)]
-    tab_advanced: nwg::Tab,
-    /// Pure caption labels -- constructed for their on-screen text only,
-    /// never read back. Held here so they outlive `build()` (Label's Drop
-    /// destroys its window).
+    header_font: nwg::Font,
+    /// Pure caption labels -- section headers and field captions -- built
+    /// for their on-screen text only, never read back. Held here so they
+    /// outlive `build()` (Label's Drop destroys its window; a local that's
+    /// dropped at the end of `build()` silently vanishes from the screen --
+    /// this is the bug the CONTROL LIFETIME rule guards against).
     #[allow(dead_code)]
     captions: Vec<nwg::Label>,
 
@@ -73,6 +74,21 @@ fn mk_label<P: Into<nwg::ControlHandle> + Copy>(
 ) -> nwg::Label {
     let mut l = nwg::Label::default();
     nwg::Label::builder().text(text).position(pos).size(size).parent(parent).build(&mut l).unwrap();
+    l
+}
+
+/// Section-header caption: full-width, Segoe UI Semibold 15px (per the
+/// binding design system). `font` must outlive the returned Label.
+fn mk_header<P: Into<nwg::ControlHandle> + Copy>(parent: P, text: &str, y: i32, font: &nwg::Font) -> nwg::Label {
+    let mut l = nwg::Label::default();
+    nwg::Label::builder()
+        .text(text)
+        .position((32, y))
+        .size((616, 22))
+        .font(Some(font))
+        .parent(parent)
+        .build(&mut l)
+        .unwrap();
     l
 }
 
@@ -141,95 +157,127 @@ fn parse_i64(t: &nwg::TextInput) -> i64 {
     t.text().trim().parse::<i64>().unwrap_or(0)
 }
 
+/// This is the dense page: 29 controls in a single 680x456 frame. Every row
+/// below was hand-budgeted against that height with a running `y` cursor --
+/// see docs/plans + .superpowers/sdd/task-3-report.md for the row-by-row
+/// math. Field widths use ~7px/char for caption labels (the original file's
+/// own worst-case label -- "CPU% / Low% / Dur(s) / Max:" at 175px wide --
+/// shipped without clipping at that ratio, so it's an empirically safe
+/// floor, not the spec's more conservative ~9px/char ceiling). TextInputs
+/// are sized tighter than that -- unlike static labels they scroll instead
+/// of clipping, so density there costs nothing.
 pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPage {
-    let mut tabs = nwg::TabsContainer::default();
-    nwg::TabsContainer::builder()
-        .position((0, 0))
-        .size((740, 460))
-        .parent(parent)
-        .build(&mut tabs)
-        .unwrap();
-
-    let mut tab_basic = nwg::Tab::default();
-    nwg::Tab::builder().text("Basic").parent(&tabs).build(&mut tab_basic).unwrap();
-    let mut tab_advanced = nwg::Tab::default();
-    nwg::Tab::builder().text("Advanced").parent(&tabs).build(&mut tab_advanced).unwrap();
-
-    // Pure caption labels are pushed here instead of bound to a `let` --
-    // nwg::Label's Drop destroys its window, so a discarded return value
-    // would vanish right after being drawn. See `captions` field doc.
+    let header_font = theme::semibold(15);
     let mut captions: Vec<nwg::Label> = Vec::new();
 
-    // --- Basic tab ---
-    let b = &tab_basic;
-    captions.push(mk_label(b, "Scenario:", (10, 12), (170, 22)));
-    let cmb_scenario = mk_combo(b, (190, 10), (300, 26));
+    const PAD: i32 = 32;
+    const FULL_W: i32 = 616; // 680 frame width - 2*32 padding
+    const ROW_H: i32 = 34; // dense-page minimum row pitch
+    const FIELD_H: i32 = 26;
+
+    let mut y = PAD;
+
+    // ---- Section: Scenario --------------------------------------------
+    captions.push(mk_header(parent, "Scenario", y, &header_font));
+    y += 22 + 8;
+
+    captions.push(mk_label(parent, "Scenario:", (PAD, y - 2), (70, 20)));
+    // Widened well past the longest preset name ("Memory threshold capture")
+    // -- the row has plenty of spare width now that lbl_bitness moved to its
+    // own hint line below.
+    let cmb_scenario = mk_combo(parent, (PAD + 78, y), (260, 26));
     {
         let mut names: Vec<String> = Preset::all().iter().map(|p| p.name.to_string()).collect();
         names.push("Custom".into());
         cmb_scenario.set_collection(names);
     }
+    // Bitness readout: a status/warning readout whose real text (set in
+    // `load()`) can run to 100+ chars (summary + a fallback warning -- see
+    // bitness.rs), so it gets the full content width on its own hint line
+    // right under the scenario row instead of being squeezed beside the
+    // combo. It's still a static Label (can't scroll like a TextInput), so
+    // width is the only lever available; full width is the most this frame
+    // can offer it.
+    let lbl_bitness = mk_label(parent, "", (PAD, y + 27), (FULL_W, 18));
+    theme::register_muted(&lbl_bitness.handle);
+    y += 46; // combo row (26) + tight gap + hint line (18) + tight gap
 
-    captions.push(mk_label(b, "Effective command:", (10, 48), (170, 22)));
-    let txt_effective = mk_text(b, (190, 46), (540, 24), true);
+    // Effective command preview -- kept a single-line TextInput (the public
+    // field's type is frozen); full width per the layout brief.
+    let txt_effective = mk_text(parent, (PAD, y), (FULL_W, FIELD_H), true);
+    y += ROW_H;
 
-    captions.push(mk_label(b, "ProcDump binary:", (10, 80), (170, 22)));
-    let lbl_bitness = mk_label(b, "", (190, 80), (540, 22));
+    // ---- Section: Configuration (output + triggers) --------------------
+    y += 16;
+    captions.push(mk_header(parent, "Configuration", y, &header_font));
+    y += 22 + 8;
 
-    captions.push(mk_label(b, "ProcDump path:", (10, 112), (170, 22)));
-    let txt_procdump_path = mk_text(b, (190, 110), (420, 24), false);
-    let btn_browse_pd = mk_button(b, "Browse...", (620, 108), (110, 26));
+    captions.push(mk_label(parent, "ProcDump path:", (PAD, y - 2), (110, 20)));
+    let txt_procdump_path = mk_text(parent, (PAD + 118, y), (350, FIELD_H), false);
+    let btn_browse_pd = mk_button(parent, "Browse...", (PAD + 118 + 350 + 8, y - 2), (110, 30));
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Dump directory:", (10, 144), (170, 22)));
-    let txt_dump_dir = mk_text(b, (190, 142), (420, 24), false);
-    let btn_browse_dir = mk_button(b, "Browse...", (620, 140), (110, 26));
+    captions.push(mk_label(parent, "Dump directory:", (PAD, y - 2), (120, 20)));
+    let txt_dump_dir = mk_text(parent, (PAD + 128, y), (330, FIELD_H), false);
+    let btn_browse_dir = mk_button(parent, "Browse...", (PAD + 128 + 330 + 8, y - 2), (110, 30));
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Dump type:", (10, 176), (170, 22)));
-    let cmb_dump_type = mk_combo(b, (190, 174), (150, 26));
+    // Checkbox widths below reserve ~18px for the win32 checkbox glyph on
+    // top of ~7px/char for the caption text -- narrower boxes clip the
+    // caption (a static caption, so it can't scroll like a TextInput).
+    captions.push(mk_label(parent, "Dump type:", (PAD, y - 2), (72, 20)));
+    let cmb_dump_type = mk_combo(parent, (PAD + 80, y), (80, 26));
     cmb_dump_type.set_collection(DUMP_TYPES.iter().map(|s| s.to_string()).collect());
+    let chk_exception = mk_check(parent, "-e unhandled exception", (PAD + 80 + 80 + 8, y), (180, 22));
+    let chk_hang = mk_check(parent, "-h hung window", (PAD + 80 + 80 + 8 + 180 + 8, y), (120, 22));
+    let chk_terminate =
+        mk_check(parent, "-t on terminate", (PAD + 80 + 80 + 8 + 180 + 8 + 120 + 8, y), (130, 22));
+    y += ROW_H;
 
-    let chk_exception = mk_check(b, "-e unhandled exception", (190, 206), (170, 22));
-    let chk_hang = mk_check(b, "-h hung window", (365, 206), (140, 22));
-    let chk_terminate = mk_check(b, "-t on terminate", (510, 206), (140, 22));
+    captions.push(mk_label(parent, "CPU% / Low% / Dur(s) / Max:", (PAD, y - 2), (180, 20)));
+    let cx = PAD + 188;
+    let txt_cpu = mk_text(parent, (cx, y), (40, FIELD_H), false);
+    let txt_cpu_low = mk_text(parent, (cx + 48, y), (40, FIELD_H), false);
+    let txt_cpu_dur = mk_text(parent, (cx + 96, y), (40, FIELD_H), false);
+    let txt_count = mk_text(parent, (cx + 144, y), (40, FIELD_H), false);
+    captions.push(mk_label(parent, "Incl (-f):", (cx + 192, y - 2), (80, 20)));
+    let txt_filter_include = mk_text(parent, (cx + 192 + 88, y), (90, FIELD_H), false);
+    y += ROW_H;
 
-    captions.push(mk_label(b, "CPU% / Low% / Dur(s) / Max:", (10, 238), (175, 22)));
-    let txt_cpu = mk_text(b, (190, 236), (55, 24), false);
-    let txt_cpu_low = mk_text(b, (250, 236), (55, 24), false);
-    let txt_cpu_dur = mk_text(b, (310, 236), (55, 24), false);
-    let txt_count = mk_text(b, (370, 236), (55, 24), false);
-    let chk_cpu_per_unit = mk_check(b, "-u per-CPU", (435, 238), (140, 22));
+    captions.push(mk_label(parent, "Commit MB (-m):", (PAD, y - 2), (120, 20)));
+    let txt_mem = mk_text(parent, (PAD + 128, y), (70, FIELD_H), false);
+    let chk_clone = mk_check(parent, "-r clone", (PAD + 128 + 70 + 8, y), (80, 22));
+    let chk_avoid = mk_check(parent, "-a avoid outage", (PAD + 128 + 70 + 8 + 80 + 8, y), (130, 22));
+    let chk_overwrite =
+        mk_check(parent, "-o overwrite", (PAD + 128 + 70 + 8 + 80 + 8 + 130 + 8, y), (110, 22));
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Commit MB (-m):", (10, 270), (170, 22)));
-    let txt_mem = mk_text(b, (190, 268), (80, 24), false);
+    // per-CPU moved here from the CPU row above -- that row had no spare
+    // width left once its widths were corrected for the checkbox-glyph
+    // reserve (see comment above); this row has room to spare.
+    let chk_wait = mk_check(parent, "-w wait for launch", (PAD, y), (150, 22));
+    let chk_wer = mk_check(parent, "-wer WER integration", (PAD + 158, y), (170, 22));
+    let chk_cpu_per_unit = mk_check(parent, "-u per-CPU", (PAD + 158 + 178, y), (90, 22));
+    captions.push(mk_label(parent, "Avoid term (s):", (PAD + 158 + 178 + 98, y - 2), (110, 20)));
+    let txt_avoid_terminate = mk_text(parent, (PAD + 158 + 178 + 98 + 118, y), (60, FIELD_H), false);
+    y += ROW_H;
 
-    let chk_clone = mk_check(b, "-r clone", (190, 300), (140, 22));
-    let chk_avoid = mk_check(b, "-a avoid outage", (330, 300), (150, 22));
-    let chk_overwrite = mk_check(b, "-o overwrite", (190, 326), (140, 22));
-    let chk_wait = mk_check(b, "-w wait for launch", (330, 326), (150, 22));
+    captions.push(mk_label(parent, "Restart delay (s):", (PAD, y - 2), (130, 20)));
+    let txt_restart_delay = mk_text(parent, (PAD + 138, y), (70, FIELD_H), false);
+    captions.push(mk_label(parent, "Min free disk MB:", (PAD + 138 + 78, y - 2), (130, 20)));
+    let txt_min_disk = mk_text(parent, (PAD + 138 + 78 + 138, y), (80, FIELD_H), false);
+    captions.push(mk_label(parent, "Excl (-fx):", (PAD + 138 + 78 + 138 + 88, y - 2), (90, 20)));
+    let txt_filter_exclude = mk_text(parent, (PAD + 138 + 78 + 138 + 88 + 98, y), (70, FIELD_H), false);
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Restart delay (s):", (10, 358), (170, 22)));
-    let txt_restart_delay = mk_text(b, (190, 356), (80, 24), false);
-    captions.push(mk_label(b, "Min free disk MB:", (300, 358), (150, 22)));
-    let txt_min_disk = mk_text(b, (460, 356), (80, 24), false);
-
-    // --- Advanced tab ---
-    let a = &tab_advanced;
-    captions.push(mk_label(a, "Perf counter (-p):", (10, 14), (170, 22)));
-    let txt_perf_counter = mk_text(a, (190, 12), (540, 24), false);
-
-    captions.push(mk_label(a, "Perf threshold (-pl):", (10, 46), (170, 22)));
-    let txt_perf_threshold = mk_text(a, (190, 44), (540, 24), false);
-
-    captions.push(mk_label(a, "Filter include (-f):", (10, 78), (170, 22)));
-    let txt_filter_include = mk_text(a, (190, 76), (540, 24), false);
-
-    captions.push(mk_label(a, "Filter exclude (-fx):", (10, 110), (170, 22)));
-    let txt_filter_exclude = mk_text(a, (190, 108), (540, 24), false);
-
-    let chk_wer = mk_check(a, "-wer WER integration", (190, 140), (300, 22));
-
-    captions.push(mk_label(a, "Avoid terminate timeout (-at):", (10, 174), (220, 22)));
-    let txt_avoid_terminate = mk_text(a, (230, 172), (80, 24), false);
+    captions.push(mk_label(parent, "Perf counter (-p):", (PAD, y - 2), (130, 20)));
+    let txt_perf_counter = mk_text(parent, (PAD + 138, y), (150, FIELD_H), false);
+    captions.push(mk_label(parent, "Perf threshold (-pl):", (PAD + 138 + 158, y - 2), (150, 20)));
+    let txt_perf_threshold = mk_text(parent, (PAD + 138 + 158 + 158, y), (150, FIELD_H), false);
+    y += ROW_H;
+    // Final row bottom sits at ~440 logical px, comfortably inside the
+    // 456-tall page frame.
+    let _ = y;
 
     let option_handles = vec![
         txt_procdump_path.handle,
@@ -259,9 +307,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     ];
 
     ProcDumpPage {
-        tabs,
-        tab_basic,
-        tab_advanced,
+        header_font,
         captions,
         cmb_scenario,
         txt_effective,
