@@ -96,8 +96,17 @@ mod win {
     use std::process::Command;
 
     fn schtasks(args: &[&str]) -> Result<String, String> {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW: the GUI is a windows-subsystem process with no
+        // console. Spawning a console child (schtasks) without this makes
+        // Windows allocate a fresh console, which — when the call is made
+        // synchronously from inside a wizard nav event handler — DEADLOCKS the
+        // UI thread (task page's load() would hang the whole app). The flag
+        // skips console allocation. Do not remove.
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let out = Command::new("schtasks.exe")
             .args(args)
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("cannot run schtasks: {e}"))?;
         let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
