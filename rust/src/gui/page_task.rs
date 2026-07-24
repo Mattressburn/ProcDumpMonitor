@@ -12,7 +12,8 @@ const FULL_W: i32 = 616;
 const FIELD_X: i32 = 232;
 
 pub struct TaskPage {
-    // Kept alive only so lbl_exists' bold font isn't freed; never read again.
+    // Kept in the struct for tidy ownership; never read again. (nwg::Font
+    // has no Drop impl -- the HFONT is never freed -- convention only.)
     #[allow(dead_code)]
     status_font: nwg::Font,
     // Section-header font (Segoe UI Semibold 15px), shared by both headers

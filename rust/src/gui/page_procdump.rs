@@ -9,9 +9,9 @@ use super::theme;
 const DUMP_TYPES: [&str; 4] = ["Full", "MiniPlus", "Mini", "ThreadDump"];
 
 pub struct ProcDumpPage {
-    // Kept alive only so the section-header font isn't freed out from under
-    // the header Labels still displaying it (Font's Drop frees the HFONT;
-    // see page_task.rs's `bold_font` for the same pattern).
+    // Kept in the struct for tidy ownership alongside the labels using it.
+    // (nwg::Font has no Drop impl -- the HFONT is never freed -- so this is
+    // convention, not a lifetime requirement; see mod.rs's font note.)
     #[allow(dead_code)]
     header_font: nwg::Font,
     /// Pure caption labels -- section headers and field captions -- built

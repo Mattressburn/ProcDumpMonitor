@@ -6,10 +6,9 @@ use std::rc::Rc;
 use super::theme;
 
 pub struct ReviewPage {
-    // Kept alive only so lbl_banner's bold font isn't freed -- Font's Drop
-    // destroys the HFONT, which would silently un-bold the label even
-    // though construction still succeeds (see page_task.rs's identical
-    // note; ALIVE checks don't catch this class of bug).
+    // Kept in the struct for tidy ownership alongside lbl_banner.
+    // (nwg::Font has no Drop impl -- the HFONT is never freed -- so this is
+    // convention, not a lifetime requirement; see mod.rs's font note.)
     #[allow(dead_code)]
     bold_font: nwg::Font,
     pub txt_summary: nwg::TextBox,

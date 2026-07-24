@@ -12,8 +12,8 @@ const UNCHANGED: &str = "(unchanged)";
 
 pub struct NotifyPage {
     // Segoe UI Semibold 15px used by the "Email"/"Webhook" section headers.
-    // A `Font` frees its HFONT on drop, so it must outlive the labels that
-    // reference it -- kept here for the page's lifetime.
+    // Kept in the struct for tidy ownership. (nwg::Font has no Drop impl --
+    // the HFONT is never freed -- convention, not a lifetime requirement.)
     #[allow(dead_code)]
     hdr_font: nwg::Font,
     // Every static Label created in build() (section headers + field

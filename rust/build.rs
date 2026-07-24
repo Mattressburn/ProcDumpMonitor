@@ -10,6 +10,11 @@ fn main() {
         #[cfg(windows)]
         {
             let manifest = if std::env::var("PDM_TEST_MANIFEST").as_deref() == Ok("1") {
+                // A release exe must never ship asInvoker: it would silently drop
+                // the requireAdministrator elevation the app depends on.
+                if std::env::var("PROFILE").as_deref() == Ok("release") {
+                    panic!("PDM_TEST_MANIFEST=1 is not allowed for release builds; unset it");
+                }
                 "app.test.manifest"
             } else {
                 "app.manifest"

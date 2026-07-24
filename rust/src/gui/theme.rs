@@ -46,6 +46,16 @@ fn colorref(c: [u8; 3]) -> COLORREF {
     COLORREF(c[0] as u32 | (c[1] as u32) << 8 | (c[2] as u32) << 16)
 }
 
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn colorref_packs_bgr() {
+        // COLORREF is 0x00BBGGRR: red lands in the low byte.
+        assert_eq!(super::colorref([255, 0, 0]).0, 0x0000FF);
+        assert_eq!(super::colorref(super::ACCENT).0, 0x00BD6C0F);
+    }
+}
+
 fn hwnd_key(h: &ControlHandle) -> isize {
     h.hwnd().map(|p| p as isize).unwrap_or(0)
 }
@@ -175,8 +185,9 @@ pub fn attach(parent: &ControlHandle) {
         .unwrap_or(true);
 
     // RawEventHandler has no Drop, so the subclass stays installed after this
-    // returns — exactly what we want (process-lifetime painting).
-    let _ = nwg::bind_raw_event_handler(parent, HANDLER_ID, move |hwnd, msg, w, l| {
+    // returns — exactly what we want (process-lifetime painting). A failed
+    // bind only costs theming (cosmetic), but leave a debug breadcrumb.
+    let bound = nwg::bind_raw_event_handler(parent, HANDLER_ID, move |hwnd, msg, w, l| {
         match msg {
             WM_CTLCOLORSTATIC => {
                 let child = l as isize;
@@ -234,4 +245,5 @@ pub fn attach(parent: &ControlHandle) {
             _ => None,
         }
     });
+    debug_assert!(bound.is_ok(), "theme::attach: raw handler bind failed");
 }
