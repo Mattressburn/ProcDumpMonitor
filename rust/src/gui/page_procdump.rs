@@ -181,6 +181,14 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     // rightward from 232 and must stay inside the right margin (x <= 648);
     // TextInputs scroll rather than clip, so they're sized tight to make room.
     const FIELD_X: i32 = 232;
+    // Shared columns for the two stacked 3-checkbox rows below ("-r/-a/-o"
+    // and "-w/-wer/-u"): each row's *first* checkbox differs on purpose (row
+    // 1's starts after the Commit MB field; row 2's IS the field column,
+    // FIELD_X) but columns 2 and 3 must land at the same x on both rows.
+    // chk_wer/chk_overwrite are trimmed a few px narrower than their old
+    // width so both rows' 3rd column still ends inside the x<=648 margin.
+    const CHK_COL2: i32 = FIELD_X + 156; // 388
+    const CHK_COL3: i32 = FIELD_X + 320; // 552
 
     let mut y = PAD;
 
@@ -245,21 +253,23 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     // Reflowed here from the Dump type row (see above).
     let chk_terminate = mk_check(parent, "-t on terminate", (FIELD_X + 184, y), (118, 22));
     captions.push(mk_label(parent, "Incl (-f):", (FIELD_X + 306, y - 2), (52, 20)));
-    let txt_filter_include = mk_text(parent, (FIELD_X + 360, y), (54, FIELD_H), false);
+    // Same x and width as Excl/Avoid's boxes two rows down (FIELD_X + 368,
+    // 44 wide) -- was FIELD_X + 360 / 54 wide, off their shared column.
+    let txt_filter_include = mk_text(parent, (FIELD_X + 368, y), (44, FIELD_H), false);
     y += ROW_H;
 
     captions.push(mk_label(parent, "Commit MB (-m):", (PAD, y - 2), (190, 20)));
     let txt_mem = mk_text(parent, (FIELD_X, y), (66, FIELD_H), false);
     let chk_clone = mk_check(parent, "-r clone", (FIELD_X + 72, y), (78, 22));
-    let chk_avoid = mk_check(parent, "-a avoid outage", (FIELD_X + 156, y), (126, 22));
-    let chk_overwrite = mk_check(parent, "-o overwrite", (FIELD_X + 288, y), (110, 22));
+    let chk_avoid = mk_check(parent, "-a avoid outage", (CHK_COL2, y), (126, 22));
+    let chk_overwrite = mk_check(parent, "-o overwrite", (CHK_COL3, y), (96, 22));
     y += ROW_H;
 
     // Launch/integration checkboxes, packed from the shared field column
     // (F2b: this row used to start at the label column).
     let chk_wait = mk_check(parent, "-w wait for launch", (FIELD_X, y), (140, 22));
-    let chk_wer = mk_check(parent, "-wer WER integration", (FIELD_X + 146, y), (162, 22));
-    let chk_cpu_per_unit = mk_check(parent, "-u per-CPU", (FIELD_X + 314, y), (96, 22));
+    let chk_wer = mk_check(parent, "-wer WER integration", (CHK_COL2, y), (158, 22));
+    let chk_cpu_per_unit = mk_check(parent, "-u per-CPU", (CHK_COL3, y), (96, 22));
     y += ROW_H;
 
     captions.push(mk_label(parent, "Restart delay (s):", (PAD, y - 2), (190, 20)));

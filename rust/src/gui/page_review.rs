@@ -211,14 +211,14 @@ fn build_summary(cfg: &Config) -> String {
     };
     let webhook = if cfg.webhook_enabled { "On" } else { "Off" };
     format!(
-        "Target:            {} ({target_type})\r\n\
-         Scenario:          {}\r\n\
-         Effective args:    {}\r\n\
-         Dump directory:    {}\r\n\
-         Task name:         {}\r\n\
-         Email:             {email}\r\n\
-         Webhook:           {webhook}\r\n\
-         Retention:         {} day(s), {} GB max",
+        "Target: {} ({target_type})\r\n\
+         Scenario: {}\r\n\
+         Effective args: {}\r\n\
+         Dump directory: {}\r\n\
+         Task name: {}\r\n\
+         Email: {email}\r\n\
+         Webhook: {webhook}\r\n\
+         Retention: {} day(s), {} GB max",
         cfg.target_name,
         if cfg.scenario.is_empty() { "Custom" } else { &cfg.scenario },
         crate::procdump::build_args(cfg),

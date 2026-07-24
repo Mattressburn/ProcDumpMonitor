@@ -101,6 +101,11 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> TaskPage {
         .parent(parent)
         .build(&mut txt_existing)
         .unwrap();
+    // Muted like the page's other secondary readout (lbl_props below) --
+    // covers the empty-state line set in load(); a readonly TextBox is a
+    // static-class control under WM_CTLCOLORSTATIC so this applies same as
+    // a Label.
+    theme::register_muted(&txt_existing.handle);
 
     // Section: action that will be registered (16px above, 8px below).
     let mut lbl_preview_hdr = nwg::Label::default();
@@ -174,8 +179,8 @@ impl TaskPage {
             self.txt_existing.set_visible(true);
         } else {
             self.lbl_exists.set_text("New task will be created.");
-            self.txt_existing.set_text("");
-            self.txt_existing.set_visible(false);
+            self.txt_existing.set_text("(none \u{2014} a new task will be created)");
+            self.txt_existing.set_visible(true);
         }
 
         let exe = crate::paths::exe_path().display().to_string();
