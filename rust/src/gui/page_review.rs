@@ -64,7 +64,9 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ReviewPage 
     // ---- Primary task actions row: Create/Update, Run, Stop, Remove -------
     // x of each button = previous button's x + width + BTN_GAP, so the row
     // stays gap-consistent if a caption's width ever needs to change.
-    let (create_w, run_w, stop_w) = (150, 150, 120);
+    // Equal width for all four -- 144 comfortably fits the longest caption
+    // ("Run Task Now") and keeps the row inside the 648 right margin.
+    let (create_w, run_w, stop_w, remove_w) = (144, 144, 144, 144);
     let create_x = PAD;
     let run_x = create_x + create_w + BTN_GAP;
     let stop_x = run_x + run_w + BTN_GAP;
@@ -98,7 +100,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ReviewPage 
     nwg::Button::builder()
         .text("Remove Task")
         .position((remove_x, ROW1_Y))
-        .size((140, BTN_H))
+        .size((remove_w, BTN_H))
         .parent(parent)
         .build(&mut btn_remove)
         .unwrap();
@@ -111,7 +113,10 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ReviewPage 
     // wording changes for layout fit; every width below is sized with
     // headroom over its caption at body-font size (~7px/char), so nothing
     // clips. -------------------------------------------------------------
-    let (save_w, dumps_w, logs_w, args_w) = (110, 128, 110, 110);
+    // args_w trimmed 110->100 so this row's right edge (638) lands on the
+    // same x as row 1's after the row-1 equal-width fix, instead of 10px
+    // further right.
+    let (save_w, dumps_w, logs_w, args_w) = (110, 128, 110, 100);
     let save_x = PAD;
     let dumps_x = save_x + save_w + BTN_GAP;
     let logs_x = dumps_x + dumps_w + BTN_GAP;

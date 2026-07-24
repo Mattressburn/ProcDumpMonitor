@@ -266,8 +266,10 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     let txt_restart_delay = mk_text(parent, (FIELD_X, y), (64, FIELD_H), false);
     captions.push(mk_label(parent, "Min free disk MB:", (FIELD_X + 70, y - 2), (140, 20)));
     let txt_min_disk = mk_text(parent, (FIELD_X + 214, y), (66, FIELD_H), false);
-    captions.push(mk_label(parent, "Excl (-fx):", (FIELD_X + 286, y - 2), (66, 20)));
-    let txt_filter_exclude = mk_text(parent, (FIELD_X + 356, y), (56, FIELD_H), false);
+    // Third-column label/field x match the row below (Avoid (s):) exactly --
+    // shared third-column grid across both bottom rows.
+    captions.push(mk_label(parent, "Excl (-fx):", (FIELD_X + 292, y - 2), (72, 20)));
+    let txt_filter_exclude = mk_text(parent, (FIELD_X + 368, y), (44, FIELD_H), false);
     y += ROW_H;
 
     // Perf counter/threshold pair, plus the reflowed Avoid-term pair (moved

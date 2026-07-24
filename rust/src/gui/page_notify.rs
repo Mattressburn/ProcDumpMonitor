@@ -125,19 +125,27 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> NotifyPage 
     });
     let chk_email = mk_check(parent, "Enable email notifications", (FX, 32), (416, 22));
 
+    // Second-column grid shared by the Port and SMTP username rows below --
+    // one label x and one field x so the two fields line up instead of
+    // drifting (Port's field used to hug its label while username's sat
+    // ~110px further right). chk_ssl is squeezed into what's left after the
+    // field on the Port row, still inside the FX2_FIELD..648 margin.
+    const FX2_LABEL: i32 = 400;
+    const FX2_FIELD: i32 = 508;
+
     // Row: SMTP server / Port / Use SSL.
     captions.push(mk_label(parent, "SMTP server:", (32, 64), (190, 20)));
     let txt_smtp = mk_text(parent, (FX, 66), (150, 26));
-    captions.push(mk_label(parent, "Port:", (392, 64), (40, 20)));
-    let txt_port = mk_text(parent, (438, 66), (50, 26));
-    let chk_ssl = mk_check(parent, "Use SSL/TLS", (500, 66), (130, 22));
+    captions.push(mk_label(parent, "Port:", (FX2_LABEL, 64), (40, 20)));
+    let txt_port = mk_text(parent, (FX2_FIELD, 66), (40, 26));
+    let chk_ssl = mk_check(parent, "Use SSL/TLS", (FX2_FIELD + 48, 66), (92, 22));
 
     // Row: From address / SMTP username (paired only for space -- distinct
     // fields, each with its own label; first field still on the shared column).
     captions.push(mk_label(parent, "From address:", (32, 98), (190, 20)));
     let txt_from = mk_text(parent, (FX, 100), (160, 26));
-    captions.push(mk_label(parent, "SMTP username:", (400, 98), (140, 20)));
-    let txt_user = mk_text(parent, (548, 100), (100, 26));
+    captions.push(mk_label(parent, "SMTP username:", (FX2_LABEL, 98), (100, 20)));
+    let txt_user = mk_text(parent, (FX2_FIELD, 100), (100, 26));
 
     captions.push(mk_label(parent, "To (; separated):", (32, 132), (190, 20)));
     let txt_to = mk_text(parent, (FX, 134), (416, 26));
@@ -180,7 +188,8 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> NotifyPage 
     captions.push(mk_label(parent, "Retention (days):", (32, 346), (190, 20)));
     let txt_ret_days = mk_text(parent, (FX, 348), (55, 26));
     captions.push(mk_label(parent, "Max size (GB):", (295, 346), (110, 20)));
-    let txt_ret_gb = mk_text(parent, (413, 348), (55, 26));
+    // Same field x as "Max log files:" above -- shared second-column grid.
+    let txt_ret_gb = mk_text(parent, (423, 348), (55, 26));
 
     captions.push(mk_label(parent, "Stability timeout (s):", (32, 380), (190, 20)));
     let txt_stab_timeout = mk_text(parent, (FX, 382), (60, 26));
