@@ -5,6 +5,7 @@ mod page_procdump;
 mod page_review;
 mod page_target;
 mod page_task;
+mod theme;
 
 use crate::config::Config;
 use crate::paths;
@@ -28,9 +29,39 @@ pub struct WizardState {
 const STEP_TITLES: [&str; 6] = ["Target", "ProcDump", "Task", "Notify", "Review", "About"];
 const LAST_PAGE: usize = STEP_TITLES.len() - 1;
 
+// Content-header text per step (owned by the shell; the pages no longer carry
+// their own heading). Kept in step order to match STEP_TITLES.
+const PAGE_TITLES: [&str; 6] = [
+    "Choose what to monitor",
+    "Configure ProcDump",
+    "Scheduled task",
+    "Notifications",
+    "Review & install",
+    "About",
+];
+const PAGE_SUBTITLES: [&str; 6] = [
+    "Pick a Windows service or type a process name.",
+    "Dump triggers, options, and output location.",
+    "How the monitor runs in the background.",
+    "Get an email or webhook alert when a dump is captured.",
+    "Check the summary, then create or manage the scheduled task.",
+    "Version and build information.",
+];
+
+// Sidebar step-list geometry (logical px; nwg scales for DPI).
+const STEP_Y0: i32 = 96;
+const STEP_H: i32 = 40;
+const STEP_ROW_INSET: i32 = 8; // centers the 24-tall label/bar in the 40 row
+
 pub fn run() {
     nwg::init().expect("nwg init failed");
-    let _ = nwg::Font::set_global_family("Segoe UI");
+
+    // Global default font (Segoe UI 15px) so any control that doesn't set its
+    // own font still matches the wizard body size. Replaces the old bare
+    // `set_global_family` call.
+    let mut default_font = nwg::Font::default();
+    let _ = nwg::Font::builder().family("Segoe UI").size(15).build(&mut default_font);
+    nwg::Font::set_global_default(Some(default_font));
 
     let state = Rc::new(WizardState {
         cfg: RefCell::new(Config::load(&paths::config_path())),
@@ -43,35 +74,130 @@ pub fn run() {
     let embed = nwg::EmbedResource::load(None).ok();
     let icon = embed.as_ref().and_then(|e| e.icon(1, None));
 
+    // Built WITHOUT the VISIBLE flag on purpose: every sidebar/content static
+    // is created and painted the instant it's built, and the theme registry
+    // (theme.rs) that decides its text/background color is populated by the
+    // register_*() call that runs on the NEXT line after each build(). If the
+    // window is visible during construction, that first paint happens before
+    // the register call and WM_CTLCOLORSTATIC reads an empty registry -> the
+    // control keeps a wrong (white/near-black) color forever, because nothing
+    // invalidates it again (the six step labels only looked right because nav
+    // re-set_font()s them, forcing a repaint). Showing the window once, after
+    // everything is built AND registered, makes every control's first real
+    // paint query the fully-populated registry.
     let mut window = nwg::Window::default();
     nwg::Window::builder()
-        .size((780, 580))
+        .size((920, 640))
         .center(true)
         .title("ProcDump Monitor")
         .icon(icon.as_ref())
-        .flags(nwg::WindowFlags::WINDOW | nwg::WindowFlags::VISIBLE)
+        .flags(nwg::WindowFlags::WINDOW)
         .build(&mut window)
         .expect("window");
     let window_handle = window.handle;
 
-    let mut bold_font = nwg::Font::default();
-    let _ = nwg::Font::builder().family("Segoe UI").weight(700).build(&mut bold_font);
+    // White content canvas + gray sidebar + footer divider, and the text
+    // coloring the sidebar/header labels rely on.
+    theme::attach(&window.handle);
 
-    let mut step_label = nwg::Label::default();
+    // Fonts kept alive for the window's lifetime (nwg::Font never frees its
+    // HFONT, but building once avoids re-creating it on every nav).
+    let app_title_font = theme::semibold(18);
+    let step_active_font = theme::semibold(15);
+
+    // ---- Sidebar chrome ----------------------------------------------------
+    let mut app_title = nwg::Label::default();
     nwg::Label::builder()
-        .text(&format!("Step 1 of {} - {}", STEP_TITLES.len(), STEP_TITLES[0]))
-        .position((10, 8))
-        .size((600, 24))
+        .text("ProcDump Monitor")
+        .position((24, 28))
+        .size((200, 26))
         .parent(&window)
-        .build(&mut step_label)
-        .expect("step label");
-    step_label.set_font(Some(&bold_font));
+        .build(&mut app_title)
+        .expect("app title");
+    app_title.set_font(Some(&app_title_font));
+    theme::register_sidebar_bg(&app_title.handle);
 
+    let mut app_subtitle = nwg::Label::default();
+    nwg::Label::builder()
+        .text("Setup wizard")
+        .position((24, 56))
+        .size((200, 18))
+        .parent(&window)
+        .build(&mut app_subtitle)
+        .expect("app subtitle");
+    app_subtitle.set_font(Some(theme::subtitle_font()));
+    theme::register_sidebar_bg(&app_subtitle.handle);
+    theme::register_muted(&app_subtitle.handle);
+
+    // Active-step accent bar (3x24) — starts on step 0; moved on nav.
+    let mut accent_bar = nwg::Label::default();
+    nwg::Label::builder()
+        .text("")
+        .position((0, STEP_Y0 + STEP_ROW_INSET))
+        .size((3, 24))
+        .parent(&window)
+        .build(&mut accent_bar)
+        .expect("accent bar");
+    theme::register_accent_bar(&accent_bar.handle);
+
+    // Six step rows.
+    let mut step_labels: Vec<nwg::Label> = Vec::with_capacity(STEP_TITLES.len());
+    for (i, name) in STEP_TITLES.iter().enumerate() {
+        let mut lbl = nwg::Label::default();
+        nwg::Label::builder()
+            .text(&format!("{}  {}", i + 1, name))
+            .position((24, STEP_Y0 + (i as i32) * STEP_H + STEP_ROW_INSET))
+            .size((200, 24))
+            .parent(&window)
+            .build(&mut lbl)
+            .expect("step label");
+        lbl.set_font(Some(if i == 0 { &step_active_font } else { theme::body_font() }));
+        theme::register_sidebar_bg(&lbl.handle);
+        theme::register_muted(&lbl.handle);
+        step_labels.push(lbl);
+    }
+    theme::set_active_step(&step_labels[0].handle);
+
+    let mut version_label = nwg::Label::default();
+    nwg::Label::builder()
+        .text(&format!("Version {}", env!("CARGO_PKG_VERSION")))
+        .position((24, 604))
+        .size((200, 18))
+        .parent(&window)
+        .build(&mut version_label)
+        .expect("version label");
+    version_label.set_font(Some(theme::subtitle_font()));
+    theme::register_sidebar_bg(&version_label.handle);
+    theme::register_muted(&version_label.handle);
+
+    // ---- Content header (per-page title/subtitle, updated on nav) ----------
+    let mut content_title = nwg::Label::default();
+    nwg::Label::builder()
+        .text(PAGE_TITLES[0])
+        .position((272, 32))
+        .size((624, 34))
+        .parent(&window)
+        .build(&mut content_title)
+        .expect("content title");
+    content_title.set_font(Some(theme::title_font()));
+
+    let mut content_subtitle = nwg::Label::default();
+    nwg::Label::builder()
+        .text(PAGE_SUBTITLES[0])
+        .position((272, 68))
+        .size((624, 20))
+        .parent(&window)
+        .build(&mut content_subtitle)
+        .expect("content subtitle");
+    content_subtitle.set_font(Some(theme::subtitle_font()));
+    theme::register_muted(&content_subtitle.handle);
+
+    // ---- Footer nav --------------------------------------------------------
     let mut back_btn = nwg::Button::default();
     nwg::Button::builder()
         .text("< Back")
-        .position((10, 530))
-        .size((90, 30))
+        .position((696, 596))
+        .size((96, 32))
         .enabled(false)
         .parent(&window)
         .build(&mut back_btn)
@@ -80,8 +206,8 @@ pub fn run() {
     let mut next_btn = nwg::Button::default();
     nwg::Button::builder()
         .text("Next >")
-        .position((680, 530))
-        .size((90, 30))
+        .position((800, 596))
+        .size((96, 32))
         .parent(&window)
         .build(&mut next_btn)
         .expect("next");
@@ -89,17 +215,20 @@ pub fn run() {
     let next_h = next_btn.handle;
 
     // One frame per page, identical rect; pages build their controls inside.
-    // Only the current page's frame carries the VISIBLE flag.
+    // Only the current page's frame carries the VISIBLE flag. `VISIBLE` is
+    // WS_VISIBLE with no border, so the frame draws no dark box on the canvas.
     let mut frames: Vec<nwg::Frame> = Vec::with_capacity(STEP_TITLES.len());
     for i in 0..STEP_TITLES.len() {
         let mut f = nwg::Frame::default();
         nwg::Frame::builder()
-            .position((10, 40))
-            .size((760, 480))
+            .position((240, 100))
+            .size((680, 456))
             .flags(if i == 0 { nwg::FrameFlags::VISIBLE } else { nwg::FrameFlags::NONE })
             .parent(&window)
             .build(&mut f)
             .expect("frame");
+        // Each frame paints its own white body + white label backgrounds.
+        theme::attach(&f.handle);
         frames.push(f);
     }
 
@@ -241,9 +370,9 @@ pub fn run() {
 
                 // Every page's save() now returns bool (only Notify's ever
                 // returns false, on invalid email settings). A false abort
-                // leaves `current`, the frames, and the step label untouched
-                // -- the user stays put with the error dialog Notify already
-                // showed, and no partial state change happened.
+                // leaves `current`, the frames, and the sidebar/header state
+                // untouched -- the user stays put with the error dialog Notify
+                // already showed, and no partial state change happened.
                 let save_ok = match cur {
                     0 => target_page.save(&mut state.cfg.borrow_mut()),
                     1 => procdump_page.save(&mut state.cfg.borrow_mut()),
@@ -276,12 +405,19 @@ pub fn run() {
                 frames[cur].set_visible(false);
                 frames[next].set_visible(true);
 
-                step_label.set_text(&format!(
-                    "Step {} of {} - {}",
-                    next + 1,
-                    STEP_TITLES.len(),
-                    STEP_TITLES[next]
-                ));
+                // Content header text for the new page.
+                content_title.set_text(PAGE_TITLES[next]);
+                content_subtitle.set_text(PAGE_SUBTITLES[next]);
+
+                // Sidebar active-step indicator: set the active row first so the
+                // font-driven repaints below pick up the new accent/muted text
+                // colors, then move the accent bar to the active row.
+                theme::set_active_step(&step_labels[next].handle);
+                for (i, lbl) in step_labels.iter().enumerate() {
+                    lbl.set_font(Some(if i == next { &step_active_font } else { theme::body_font() }));
+                }
+                accent_bar.set_position(0, STEP_Y0 + (next as i32) * STEP_H + STEP_ROW_INSET);
+
                 back_btn.set_enabled(next > 0);
                 next_btn.set_enabled(next < LAST_PAGE);
 
@@ -290,6 +426,11 @@ pub fn run() {
             _ => {}
         }
     });
+
+    // Everything is built and registered with the theme: reveal the window so
+    // each control's first paint queries the fully-populated color registry
+    // (see the WindowFlags::WINDOW comment where the window is built).
+    window.set_visible(true);
 
     nwg::dispatch_thread_events();
     nwg::unbind_event_handler(&handler);

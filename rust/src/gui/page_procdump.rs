@@ -4,20 +4,21 @@ use native_windows_gui as nwg;
 use std::cell::Cell;
 use std::rc::Rc;
 
+use super::theme;
+
 const DUMP_TYPES: [&str; 4] = ["Full", "MiniPlus", "Mini", "ThreadDump"];
 
 pub struct ProcDumpPage {
-    // Kept alive only for their Drop side effect (destroys the win32 window);
-    // never read again after build().
+    // Kept in the struct for tidy ownership alongside the labels using it.
+    // (nwg::Font has no Drop impl -- the HFONT is never freed -- so this is
+    // convention, not a lifetime requirement; see mod.rs's font note.)
     #[allow(dead_code)]
-    tabs: nwg::TabsContainer,
-    #[allow(dead_code)]
-    tab_basic: nwg::Tab,
-    #[allow(dead_code)]
-    tab_advanced: nwg::Tab,
-    /// Pure caption labels -- constructed for their on-screen text only,
-    /// never read back. Held here so they outlive `build()` (Label's Drop
-    /// destroys its window).
+    header_font: nwg::Font,
+    /// Pure caption labels -- section headers and field captions -- built
+    /// for their on-screen text only, never read back. Held here so they
+    /// outlive `build()` (Label's Drop destroys its window; a local that's
+    /// dropped at the end of `build()` silently vanishes from the screen --
+    /// this is the bug the CONTROL LIFETIME rule guards against).
     #[allow(dead_code)]
     captions: Vec<nwg::Label>,
 
@@ -73,6 +74,21 @@ fn mk_label<P: Into<nwg::ControlHandle> + Copy>(
 ) -> nwg::Label {
     let mut l = nwg::Label::default();
     nwg::Label::builder().text(text).position(pos).size(size).parent(parent).build(&mut l).unwrap();
+    l
+}
+
+/// Section-header caption: full-width, Segoe UI Semibold 15px (per the
+/// binding design system). `font` must outlive the returned Label.
+fn mk_header<P: Into<nwg::ControlHandle> + Copy>(parent: P, text: &str, y: i32, font: &nwg::Font) -> nwg::Label {
+    let mut l = nwg::Label::default();
+    nwg::Label::builder()
+        .text(text)
+        .position((32, y))
+        .size((616, 22))
+        .font(Some(font))
+        .parent(parent)
+        .build(&mut l)
+        .unwrap();
     l
 }
 
@@ -141,95 +157,144 @@ fn parse_i64(t: &nwg::TextInput) -> i64 {
     t.text().trim().parse::<i64>().unwrap_or(0)
 }
 
+/// This is the dense page: 29 controls in a single 680x456 frame. Every row
+/// below was hand-budgeted against that height with a running `y` cursor --
+/// see docs/plans + .superpowers/sdd/task-3-report.md for the row-by-row
+/// math. Field widths use ~7px/char for caption labels (the original file's
+/// own worst-case label -- "CPU% / Low% / Dur(s) / Max:" at 175px wide --
+/// shipped without clipping at that ratio, so it's an empirically safe
+/// floor, not the spec's more conservative ~9px/char ceiling). TextInputs
+/// are sized tighter than that -- unlike static labels they scroll instead
+/// of clipping, so density there costs nothing.
 pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPage {
-    let mut tabs = nwg::TabsContainer::default();
-    nwg::TabsContainer::builder()
-        .position((0, 0))
-        .size((740, 460))
-        .parent(parent)
-        .build(&mut tabs)
-        .unwrap();
-
-    let mut tab_basic = nwg::Tab::default();
-    nwg::Tab::builder().text("Basic").parent(&tabs).build(&mut tab_basic).unwrap();
-    let mut tab_advanced = nwg::Tab::default();
-    nwg::Tab::builder().text("Advanced").parent(&tabs).build(&mut tab_advanced).unwrap();
-
-    // Pure caption labels are pushed here instead of bound to a `let` --
-    // nwg::Label's Drop destroys its window, so a discarded return value
-    // would vanish right after being drawn. See `captions` field doc.
+    let header_font = theme::semibold(15);
     let mut captions: Vec<nwg::Label> = Vec::new();
 
-    // --- Basic tab ---
-    let b = &tab_basic;
-    captions.push(mk_label(b, "Scenario:", (10, 12), (170, 22)));
-    let cmb_scenario = mk_combo(b, (190, 10), (300, 26));
+    const PAD: i32 = 32;
+    const FULL_W: i32 = 616; // 680 frame width - 2*32 padding
+    const ROW_H: i32 = 34; // dense-page minimum row pitch
+    const FIELD_H: i32 = 26;
+    // Shared wizard field column: PAD(32) + label col(190) + gap(10). Every
+    // row's FIRST control starts here so ProcDump's field column lines up with
+    // the single column all the other pages use (frame-rel x=232). Labels live
+    // in the label column (x=32, w<=190). Packed rows flow extra controls
+    // rightward from 232 and must stay inside the right margin (x <= 648);
+    // TextInputs scroll rather than clip, so they're sized tight to make room.
+    const FIELD_X: i32 = 232;
+    // Shared columns for the two stacked 3-checkbox rows below ("-r/-a/-o"
+    // and "-w/-wer/-u"): each row's *first* checkbox differs on purpose (row
+    // 1's starts after the Commit MB field; row 2's IS the field column,
+    // FIELD_X) but columns 2 and 3 must land at the same x on both rows.
+    // chk_wer/chk_overwrite are trimmed a few px narrower than their old
+    // width so both rows' 3rd column still ends inside the x<=648 margin.
+    const CHK_COL2: i32 = FIELD_X + 156; // 388
+    const CHK_COL3: i32 = FIELD_X + 320; // 552
+
+    let mut y = PAD;
+
+    // ---- Section: Scenario --------------------------------------------
+    captions.push(mk_header(parent, "Scenario", y, &header_font));
+    y += 22 + 8;
+
+    captions.push(mk_label(parent, "Scenario:", (PAD, y - 2), (190, 20)));
+    let cmb_scenario = mk_combo(parent, (FIELD_X, y), (300, 26));
     {
         let mut names: Vec<String> = Preset::all().iter().map(|p| p.name.to_string()).collect();
         names.push("Custom".into());
         cmb_scenario.set_collection(names);
     }
+    // Bitness readout: a status/warning readout whose real text (set in
+    // `load()`) can run to 100+ chars (summary + a fallback warning -- see
+    // bitness.rs), so it gets the full content width on its own hint line
+    // right under the scenario row instead of being squeezed beside the
+    // combo. It's still a static Label (can't scroll like a TextInput), so
+    // width is the only lever available; full width is the most this frame
+    // can offer it.
+    let lbl_bitness = mk_label(parent, "", (PAD, y + 27), (FULL_W, 18));
+    theme::register_muted(&lbl_bitness.handle);
+    y += 46; // combo row (26) + tight gap + hint line (18) + tight gap
 
-    captions.push(mk_label(b, "Effective command:", (10, 48), (170, 22)));
-    let txt_effective = mk_text(b, (190, 46), (540, 24), true);
+    // Effective command preview -- kept a single-line TextInput (the public
+    // field's type is frozen); full width per the layout brief.
+    let txt_effective = mk_text(parent, (PAD, y), (FULL_W, FIELD_H), true);
+    y += ROW_H;
 
-    captions.push(mk_label(b, "ProcDump binary:", (10, 80), (170, 22)));
-    let lbl_bitness = mk_label(b, "", (190, 80), (540, 22));
+    // ---- Section: Configuration (output + triggers) --------------------
+    y += 16;
+    captions.push(mk_header(parent, "Configuration", y, &header_font));
+    y += 22 + 8;
 
-    captions.push(mk_label(b, "ProcDump path:", (10, 112), (170, 22)));
-    let txt_procdump_path = mk_text(b, (190, 110), (420, 24), false);
-    let btn_browse_pd = mk_button(b, "Browse...", (620, 108), (110, 26));
+    captions.push(mk_label(parent, "ProcDump path:", (PAD, y - 2), (190, 20)));
+    let txt_procdump_path = mk_text(parent, (FIELD_X, y), (290, FIELD_H), false);
+    let btn_browse_pd = mk_button(parent, "Browse...", (FIELD_X + 298, y - 2), (110, 30));
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Dump directory:", (10, 144), (170, 22)));
-    let txt_dump_dir = mk_text(b, (190, 142), (420, 24), false);
-    let btn_browse_dir = mk_button(b, "Browse...", (620, 140), (110, 26));
+    captions.push(mk_label(parent, "Dump directory:", (PAD, y - 2), (190, 20)));
+    let txt_dump_dir = mk_text(parent, (FIELD_X, y), (290, FIELD_H), false);
+    let btn_browse_dir = mk_button(parent, "Browse...", (FIELD_X + 298, y - 2), (110, 30));
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Dump type:", (10, 176), (170, 22)));
-    let cmb_dump_type = mk_combo(b, (190, 174), (150, 26));
+    // Dump type combo + the two dump-*trigger* checkboxes pack from x=232.
+    // The third trigger, -t, doesn't fit here once the row starts at the
+    // shared column, so it reflows onto the CPU row below (which has slack
+    // after its four tiny numeric fields).
+    captions.push(mk_label(parent, "Dump type:", (PAD, y - 2), (190, 20)));
+    let cmb_dump_type = mk_combo(parent, (FIELD_X, y), (95, 26));
     cmb_dump_type.set_collection(DUMP_TYPES.iter().map(|s| s.to_string()).collect());
+    let chk_exception = mk_check(parent, "-e unhandled exception", (FIELD_X + 103, y), (180, 22));
+    let chk_hang = mk_check(parent, "-h hung window", (FIELD_X + 291, y), (118, 22));
+    y += ROW_H;
 
-    let chk_exception = mk_check(b, "-e unhandled exception", (190, 206), (170, 22));
-    let chk_hang = mk_check(b, "-h hung window", (365, 206), (140, 22));
-    let chk_terminate = mk_check(b, "-t on terminate", (510, 206), (140, 22));
+    captions.push(mk_label(parent, "CPU% / Low% / Dur / Max:", (PAD, y - 2), (190, 20)));
+    let txt_cpu = mk_text(parent, (FIELD_X, y), (40, FIELD_H), false);
+    let txt_cpu_low = mk_text(parent, (FIELD_X + 46, y), (40, FIELD_H), false);
+    let txt_cpu_dur = mk_text(parent, (FIELD_X + 92, y), (40, FIELD_H), false);
+    let txt_count = mk_text(parent, (FIELD_X + 138, y), (40, FIELD_H), false);
+    // Reflowed here from the Dump type row (see above).
+    let chk_terminate = mk_check(parent, "-t on terminate", (FIELD_X + 184, y), (118, 22));
+    captions.push(mk_label(parent, "Incl (-f):", (FIELD_X + 306, y - 2), (52, 20)));
+    // Same x and width as Excl/Avoid's boxes two rows down (FIELD_X + 368,
+    // 44 wide) -- was FIELD_X + 360 / 54 wide, off their shared column.
+    let txt_filter_include = mk_text(parent, (FIELD_X + 368, y), (44, FIELD_H), false);
+    y += ROW_H;
 
-    captions.push(mk_label(b, "CPU% / Low% / Dur(s) / Max:", (10, 238), (175, 22)));
-    let txt_cpu = mk_text(b, (190, 236), (55, 24), false);
-    let txt_cpu_low = mk_text(b, (250, 236), (55, 24), false);
-    let txt_cpu_dur = mk_text(b, (310, 236), (55, 24), false);
-    let txt_count = mk_text(b, (370, 236), (55, 24), false);
-    let chk_cpu_per_unit = mk_check(b, "-u per-CPU", (435, 238), (140, 22));
+    captions.push(mk_label(parent, "Commit MB (-m):", (PAD, y - 2), (190, 20)));
+    let txt_mem = mk_text(parent, (FIELD_X, y), (66, FIELD_H), false);
+    let chk_clone = mk_check(parent, "-r clone", (FIELD_X + 72, y), (78, 22));
+    let chk_avoid = mk_check(parent, "-a avoid outage", (CHK_COL2, y), (126, 22));
+    let chk_overwrite = mk_check(parent, "-o overwrite", (CHK_COL3, y), (96, 22));
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Commit MB (-m):", (10, 270), (170, 22)));
-    let txt_mem = mk_text(b, (190, 268), (80, 24), false);
+    // Launch/integration checkboxes, packed from the shared field column
+    // (F2b: this row used to start at the label column).
+    let chk_wait = mk_check(parent, "-w wait for launch", (FIELD_X, y), (140, 22));
+    let chk_wer = mk_check(parent, "-wer WER integration", (CHK_COL2, y), (158, 22));
+    let chk_cpu_per_unit = mk_check(parent, "-u per-CPU", (CHK_COL3, y), (96, 22));
+    y += ROW_H;
 
-    let chk_clone = mk_check(b, "-r clone", (190, 300), (140, 22));
-    let chk_avoid = mk_check(b, "-a avoid outage", (330, 300), (150, 22));
-    let chk_overwrite = mk_check(b, "-o overwrite", (190, 326), (140, 22));
-    let chk_wait = mk_check(b, "-w wait for launch", (330, 326), (150, 22));
+    captions.push(mk_label(parent, "Restart delay (s):", (PAD, y - 2), (190, 20)));
+    let txt_restart_delay = mk_text(parent, (FIELD_X, y), (64, FIELD_H), false);
+    captions.push(mk_label(parent, "Min free disk MB:", (FIELD_X + 70, y - 2), (140, 20)));
+    let txt_min_disk = mk_text(parent, (FIELD_X + 214, y), (66, FIELD_H), false);
+    // Third-column label/field x match the row below (Avoid (s):) exactly --
+    // shared third-column grid across both bottom rows.
+    captions.push(mk_label(parent, "Excl (-fx):", (FIELD_X + 292, y - 2), (72, 20)));
+    let txt_filter_exclude = mk_text(parent, (FIELD_X + 368, y), (44, FIELD_H), false);
+    y += ROW_H;
 
-    captions.push(mk_label(b, "Restart delay (s):", (10, 358), (170, 22)));
-    let txt_restart_delay = mk_text(b, (190, 356), (80, 24), false);
-    captions.push(mk_label(b, "Min free disk MB:", (300, 358), (150, 22)));
-    let txt_min_disk = mk_text(b, (460, 356), (80, 24), false);
-
-    // --- Advanced tab ---
-    let a = &tab_advanced;
-    captions.push(mk_label(a, "Perf counter (-p):", (10, 14), (170, 22)));
-    let txt_perf_counter = mk_text(a, (190, 12), (540, 24), false);
-
-    captions.push(mk_label(a, "Perf threshold (-pl):", (10, 46), (170, 22)));
-    let txt_perf_threshold = mk_text(a, (190, 44), (540, 24), false);
-
-    captions.push(mk_label(a, "Filter include (-f):", (10, 78), (170, 22)));
-    let txt_filter_include = mk_text(a, (190, 76), (540, 24), false);
-
-    captions.push(mk_label(a, "Filter exclude (-fx):", (10, 110), (170, 22)));
-    let txt_filter_exclude = mk_text(a, (190, 108), (540, 24), false);
-
-    let chk_wer = mk_check(a, "-wer WER integration", (190, 140), (300, 22));
-
-    captions.push(mk_label(a, "Avoid terminate timeout (-at):", (10, 174), (220, 22)));
-    let txt_avoid_terminate = mk_text(a, (230, 172), (80, 24), false);
+    // Perf counter/threshold pair, plus the reflowed Avoid-term pair (moved
+    // off the launch-checkbox row, which no longer has room once it starts at
+    // the shared field column).
+    captions.push(mk_label(parent, "Perf counter (-p):", (PAD, y - 2), (190, 20)));
+    let txt_perf_counter = mk_text(parent, (FIELD_X, y), (88, FIELD_H), false);
+    captions.push(mk_label(parent, "Threshold (-pl):", (FIELD_X + 96, y - 2), (116, 20)));
+    let txt_perf_threshold = mk_text(parent, (FIELD_X + 216, y), (70, FIELD_H), false);
+    captions.push(mk_label(parent, "Avoid (s):", (FIELD_X + 292, y - 2), (72, 20)));
+    let txt_avoid_terminate = mk_text(parent, (FIELD_X + 368, y), (44, FIELD_H), false);
+    y += ROW_H;
+    // Final row bottom sits at ~452 logical px, inside the 456-tall frame;
+    // the rightmost control (avoid field) ends at x=644, inside the 648 margin.
+    let _ = y;
 
     let option_handles = vec![
         txt_procdump_path.handle,
@@ -259,9 +324,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> ProcDumpPag
     ];
 
     ProcDumpPage {
-        tabs,
-        tab_basic,
-        tab_advanced,
+        header_font,
         captions,
         cmb_scenario,
         txt_effective,

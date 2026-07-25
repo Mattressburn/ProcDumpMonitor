@@ -35,8 +35,15 @@ pub fn parse_sc_output(out: &str) -> Vec<ServiceInfo> {
 
 #[cfg(windows)]
 pub fn list() -> Vec<ServiceInfo> {
+    use std::os::windows::process::CommandExt;
+    // CREATE_NO_WINDOW: this exe is a GUI (windows) subsystem process with no
+    // console, so spawning a console child (sc.exe) otherwise makes Windows
+    // allocate a fresh console — several seconds of UI-thread stall per call,
+    // which queues the wizard's nav clicks. The flag skips console allocation.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     std::process::Command::new("sc.exe")
         .args(["query", "type=", "service", "state=", "all"])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map(|o| parse_sc_output(&String::from_utf8_lossy(&o.stdout)))
         .unwrap_or_default()

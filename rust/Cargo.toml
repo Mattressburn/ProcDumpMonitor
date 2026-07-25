@@ -19,7 +19,7 @@ ureq = { version = "2", features = ["json"] }
 # image-decoder is already pulled in by nwg's `default = ["all"]` -- listed
 # explicitly here (About page's PNG logo via Bitmap::from_bin) so the
 # dependency stays correct even if nwg's defaults ever change.
-native-windows-gui = { version = "1.0.13", features = ["image-decoder"] }
+native-windows-gui = { version = "1.0.13", features = ["image-decoder", "high-dpi"] }
 native-windows-derive = "1.0.5"
 windows = { version = "0.58", features = [
   "Win32_Foundation",
@@ -29,6 +29,8 @@ windows = { version = "0.58", features = [
   "Win32_System_LibraryLoader",
   "Win32_Storage_FileSystem",
   "Win32_System_Console",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 [build-dependencies]
