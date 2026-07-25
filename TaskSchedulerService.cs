@@ -39,7 +39,7 @@ public static class TaskSchedulerService
             throw new FileNotFoundException($"Executable not found: {exePath}");
 
         string configPath = AppPaths.ConfigPath;
-        string arguments = $"--monitor --config \"{configPath}\"";
+        string arguments = BuildTaskArguments(cfg, configPath);
         string workDir = AppPaths.InstallDir;
 
         Logger.Log("TaskSvc", $"InstallOrUpdate: taskName={taskName}");
@@ -174,9 +174,15 @@ public static class TaskSchedulerService
         return new TaskActionPreview
         {
             ExePath = AppPaths.ExePath,
-            Arguments = $"--monitor --config \"{AppPaths.ConfigPath}\"",
+            Arguments = BuildTaskArguments(cfg, AppPaths.ConfigPath),
             WorkingDirectory = AppPaths.InstallDir
         };
+    }
+
+    private static string BuildTaskArguments(Config cfg, string configPath)
+    {
+        string mode = cfg.RemoveTaskAfterSuccessfulDump ? "--oneshot" : "--monitor";
+        return $"{mode} --config \"{configPath}\"";
     }
 
     private static string GetExePath() => AppPaths.ExePath;

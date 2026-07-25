@@ -41,6 +41,14 @@ public class Config
 {
     public const int CurrentVersion = 3;
 
+    private static readonly IReadOnlyDictionary<string, string> LegacyProcessNameMap =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["CrossFire"] = "SoftwareHouse.CrossFire.Server",
+            ["CrossFire Server"] = "SoftwareHouse.CrossFire.Server",
+            ["CrossFireServer"] = "SoftwareHouse.CrossFire.Server",
+        };
+
     // ── Schema version (0 = v1/unversioned; 2 = current) ──
     public int ConfigVersion { get; set; }
 
@@ -246,15 +254,21 @@ public class Config
         // Target
         if (WaitForProcess) args.Add("-w");
 
-        string target = TargetName; 
-        if (TargetType == TargetType.Process &&
-            !string.IsNullOrWhiteSpace(target) && 
-            !target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        string target = TargetName;
+        if (TargetType == TargetType.Service)
+        {
+            args.Add($"-service {target}");
+        }
+        else if (!string.IsNullOrWhiteSpace(target) &&
+                 !target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
         {
             target += ".exe";
+            args.Add(target);
         }
-
-        args.Add(target);
+        else
+        {
+            args.Add(target);
+        }
         
         args.Add($"\"{DumpDirectory}\"");
 
@@ -310,13 +324,20 @@ public class Config
     {
         if (!string.IsNullOrWhiteSpace(TargetName) && !TargetName.Contains(".") && TargetType == TargetType.Process)
         {
+            if (LegacyProcessNameMap.TryGetValue(TargetName.Trim(), out string mappedTargetName))
+            {
+                Logger.Log($"[Config] Migrated legacy TargetName '{TargetName}' to '{mappedTargetName}'");
+                TargetName = mappedTargetName;
+                return;
+            }
+
             try
             {
                 var match = Process.GetProcesses()
                     .Select(p => {
                         try { return System.IO.Path.GetFileNameWithoutExtension(p.MainModule?.ModuleName ?? p.ProcessName); } catch { return p.ProcessName; }
                     })
-                    .FirstOrDefault(n => n.Equals(TargetName, StringComparison.OrdinalIgnoreCase) || n.StartsWith(TargetName, StringComparison.OrdinalIgnoreCase));
+                    .FirstOrDefault(n => n.Equals(TargetName, StringComparison.OrdinalIgnoreCase));
                 if (!string.IsNullOrEmpty(match))
                 {
                     Logger.Log($"[Config] Migrated legacy TargetName '{TargetName}' to '{match}'");
