@@ -14,6 +14,7 @@ mod bitness;
 mod services;
 mod cli;
 mod logger;
+mod collect;
 #[cfg(windows)]
 mod monitor;
 #[cfg(windows)]
