@@ -1,4 +1,4 @@
-# ProcDumpMonitor — project notes for Claude
+# LogDump — project notes for Claude
 
 Two implementations live here: the legacy C#/.NET app (repo root: `*.cs`) and the
 **current** Rust rewrite in `rust/` (single ~1.97MB exe, GUI + CLI). New work goes
@@ -78,7 +78,7 @@ and the 32-bit managed stacks are unusable.
 
 ## GUI end-to-end testing
 
-- `scripts\gui-e2e.ps1 -Exe rust\target\debug\ProcDumpMonitor.exe -OutDir <dir>` —
+- `scripts\gui-e2e.ps1 -Exe rust\target\debug\LogDump.exe -OutDir <dir>` —
   run under **powershell.exe 5.1** (UIA assemblies). Clicks through the sidebar,
   opens/closes both dialogs, runs a real System Health collection into `<dir>`,
   screenshots every page, captures the app log + run transcript, exits nonzero on

@@ -33,7 +33,7 @@ fn timestamp() -> String {
 }
 
 pub fn dump_email(target: &str, machine: &str, dump_path: &str) -> (String, String) {
-    let subject = format!("[ProcDump] Dump created for {target} on {machine}");
+    let subject = format!("[LogDump] Dump created for {target} on {machine}");
     let body = format!(
         "A process dump was captured.\r\n\r\n\
          Target:     {target}\r\n\
@@ -59,7 +59,7 @@ pub fn webhook_payload_dump(target: &str, machine: &str, dump_path: &str) -> Web
         type_: "MessageCard".into(),
         summary: format!("Dump created for {target}"),
         theme_color: "FF0000".into(),
-        title: format!("[ProcDump] Dump created for {target} on {machine}"),
+        title: format!("[LogDump] Dump created for {target} on {machine}"),
         text: format!(
             "**Target:** {target}\n\n**Computer:** {machine}\n\n**Dump File:** {dump_path}\n\n**Timestamp:** {}",
             timestamp()
@@ -136,9 +136,9 @@ pub fn send_email(cfg: &Config, subject: &str, body: &str) -> Result<(), String>
 #[allow(dead_code)]
 pub fn send_test_email(cfg: &Config) -> Result<(), String> {
     let machine = machine_name();
-    let subject = format!("[ProcDump] Test email from {machine}");
+    let subject = format!("[LogDump] Test email from {machine}");
     let body = format!(
-        "This is a test email from ProcDump Monitor.\r\n\r\n\
+        "This is a test email from LogDump.\r\n\r\n\
          Computer:   {machine}\r\n\
          Timestamp:  {}\r\n",
         timestamp()
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn dump_email_format() {
         let (subject, body) = dump_email("MyApp", "SERVER01", r"C:\Dumps\MyApp_1.dmp");
-        assert_eq!(subject, "[ProcDump] Dump created for MyApp on SERVER01");
+        assert_eq!(subject, "[LogDump] Dump created for MyApp on SERVER01");
         assert!(body.contains("Target:     MyApp"));
         assert!(body.contains("Computer:   SERVER01"));
         assert!(body.contains(r"Dump File:  C:\Dumps\MyApp_1.dmp"));

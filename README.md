@@ -1,4 +1,4 @@
-# ProcDump Monitor
+# LogDump
 
 A Windows utility that configures **Sysinternals ProcDump** as an unattended **Scheduled Task** for crash-dump monitoring, with optional **email and webhook notifications**.
 
@@ -8,16 +8,16 @@ A Windows utility that configures **Sysinternals ProcDump** as an unattended **S
 
 ## Quick Start
 
-1. Copy the published `ProcDumpMonitor.exe` and `procdump64.exe` into the same folder on the target machine.
-2. Run `ProcDumpMonitor.exe` — it will request Administrator privileges automatically.
+1. Copy the published `LogDump.exe` and `procdump64.exe` into the same folder on the target machine.
+2. Run `LogDump.exe` — it will request Administrator privileges automatically.
 3. Walk through the six-step wizard described below.
 4. On the **Review** page, click **Create Task** then **Run Task Now**.
 
 > Single self-contained EXE (~2 MB) — no runtime to install, nothing else to copy besides `procdump64.exe`.
 
 ```
-C:\Tools\ProcDumpMonitor\
-├── ProcDumpMonitor.exe      ← single-file self-contained EXE
+C:\Tools\LogDump\
+├── LogDump.exe               ← single-file self-contained EXE
 ├── procdump64.exe            ← Sysinternals ProcDump (place beside the EXE)
 ├── config.json               ← auto-created on first save
 ├── health.json               ← heartbeat file written each monitor cycle
@@ -164,7 +164,7 @@ Configure the Windows Scheduled Task that runs the monitor loop.
 
 | Field | Description |
 |-------|-------------|
-| **Scheduled Task Name** | Auto-generated as `ProcDump Monitor <ProcessName>` from the target you selected in Step 1. You can edit it freely. |
+| **Scheduled Task Name** | Auto-generated as `LogDump <ProcessName>` from the target you selected in Step 1. You can edit it freely. |
 | **Reset to Auto** | Button that regenerates the task name from the current target. Use this after manually editing if you want the auto-name back. |
 
 The page also shows:
@@ -262,7 +262,7 @@ Displays branding (JCI globe logo), app name, attribution, and the build date st
 The EXE carries an embedded manifest (`requireAdministrator`) so Windows itself prompts for elevation (UAC) whenever it's launched, GUI or CLI alike — there is no in-app re-launch step and no way to opt out from the command line.
 
 ```
-ProcDumpMonitor.exe [verb] [--config <path>]
+LogDump.exe [verb] [--config <path>]
 ```
 
 Every verb below accepts either form: `install` or `--install` (leading dashes are stripped before matching).
@@ -289,7 +289,7 @@ Every verb below accepts either form: `install` or `--install` (leading dashes a
 
 ### Monitor Loop
 
-When the scheduled task runs `ProcDumpMonitor.exe monitor`, it enters an infinite loop:
+When the scheduled task runs `LogDump.exe monitor`, it enters an infinite loop:
 
 1. **Disk guard** — Check free disk space. If below the configured threshold, skip this cycle and retry after the restart delay.
 2. **Launch ProcDump** with `-w` (wait for process) and all configured flags.
@@ -351,14 +351,14 @@ cargo build --release
 cargo test              # runs the full suite, incl. DPAPI round-trip
 
 # Output
-# rust/target/release/ProcDumpMonitor.exe
+# rust/target/release/LogDump.exe
 ```
 
 From Linux (LRPC), the same build runs remotely on a Windows VM and the resulting EXE is copied back:
 
 ```bash
 scripts/vm-build.sh test    # cargo test on the VM
-scripts/vm-build.sh build   # cargo build --release on the VM, fetches dist/ProcDumpMonitor.exe
+scripts/vm-build.sh build   # cargo build --release on the VM, fetches dist/LogDump.exe
 ```
 
 `cd rust && cargo test` also runs directly on Linux as a compile/sanity check — it builds and exercises every platform-independent module (config, notify, retention, procdump arg-building, bitness, CLI parsing), skipping only the `#[cfg(windows)]` GUI/DPAPI/Task Scheduler code.
@@ -382,9 +382,15 @@ From `rust/Cargo.toml`:
 
 ---
 
+## Credits
+
+The Log Collector half of this tool is a native port of the CCURE LogCollector GUI v2.0, originally written in PowerShell by L3 Production.
+
+---
+
 ## Expansion feasibility: all-in-one diagnostics app
 
-ProcDump Monitor is a Rust application with a native-windows-gui (nwg) wizard today (rewritten from the original .NET 8 WinForms app). The current UX is a six-step wizard for one job: configure ProcDump, install a Scheduled Task, monitor for dumps, and send notifications. The architecture notes below were written against the .NET WinForms implementation and are kept as roadmap context; a Rust hub would follow the same shape but with a Rust service layer and adapters instead of C#.
+LogDump is a Rust application with a native-windows-gui (nwg) wizard today (rewritten from the original .NET 8 WinForms app). The current UX is a six-step wizard for one job: configure ProcDump, install a Scheduled Task, monitor for dumps, and send notifications. The architecture notes below were written against the .NET WinForms implementation and are kept as roadmap context; a Rust hub would follow the same shape but with a Rust service layer and adapters instead of C#.
 
 If the app grows to include the Log Collector Tool and WCF Client Tracing Tool, the recommended direction is to evolve the wizard into a diagnostics hub with separate sections for each workflow.
 

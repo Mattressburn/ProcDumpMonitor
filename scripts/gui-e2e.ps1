@@ -1,4 +1,4 @@
-# GUI end-to-end driver for ProcDump Monitor (Rust build, mode-based shell).
+# GUI end-to-end driver for LogDump (Rust build, mode-based shell).
 # Launches the exe (build it with PDM_TEST_MANIFEST=1 so no UAC prompt), drives
 # it like a real user - physical mouse clicks + keystrokes - screenshotting
 # every page. Navigation is now freely-clickable SIDEBAR labels (not Back/Next).
@@ -13,7 +13,7 @@
 # TargetPath assertion needs a known-empty starting config - see below) and
 # writes a fresh one via the Save Config button.
 #
-#   powershell -File scripts\gui-e2e.ps1 -Exe rust\target\debug\ProcDumpMonitor.exe -OutDir out\shots
+#   powershell -File scripts\gui-e2e.ps1 -Exe rust\target\debug\LogDump.exe -OutDir out\shots
 #
 # Exit codes: 0 = full walk completed, 1 = element/window not found or nav broken.
 param(

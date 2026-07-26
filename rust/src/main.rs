@@ -84,5 +84,5 @@ fn attach_console() {
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("ProcDumpMonitor targets Windows; Linux builds are for `cargo test` only.");
+    eprintln!("LogDump targets Windows; Linux builds are for `cargo test` only.");
 }

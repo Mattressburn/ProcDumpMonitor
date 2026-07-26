@@ -5,6 +5,12 @@ pub use imp::*;
 
 // ponytail: only referenced from notify.rs's #[cfg(windows)] paths; cfg-gating
 // here (rather than a blanket allow(dead_code)) keeps Linux builds warning-free.
+//
+// FROZEN — these two literals survived the ProcDumpMonitor -> LogDump rename on
+// purpose. DPAPI uses the entropy as part of the key: change the bytes and every
+// SMTP password and webhook URL already saved on an existing install stops
+// decrypting, silently, with no migration path. The strings are never shown to a
+// user, so the stale name costs nothing. Do NOT "finish the rename" here.
 #[cfg(windows)]
 pub const SMTP_ENTROPY: &[u8] = b"ProcDumpMonitor-SMTP-v1";
 #[cfg(windows)]

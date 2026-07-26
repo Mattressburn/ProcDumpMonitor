@@ -50,7 +50,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> AboutPage {
 
     let mut lbl_name = nwg::Label::default();
     nwg::Label::builder()
-        .text("ProcDump Monitor")
+        .text("LogDump")
         .position((0, 264))
         .size((680, 36))
         .h_align(nwg::HTextAlign::Center)

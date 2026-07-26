@@ -14,7 +14,7 @@ pub fn install_dir() -> PathBuf {
 }
 
 pub fn exe_path() -> PathBuf {
-    std::env::current_exe().unwrap_or_else(|_| install_dir().join("ProcDumpMonitor.exe"))
+    std::env::current_exe().unwrap_or_else(|_| install_dir().join("LogDump.exe"))
 }
 
 pub fn config_path() -> PathBuf { install_dir().join("config.json") }

@@ -1,10 +1,10 @@
 [package]
-name = "procdumpmonitor"
+name = "logdump"
 version = "1.0.0"
 edition = "2021"
 
 [[bin]]
-name = "ProcDumpMonitor"
+name = "LogDump"
 path = "src/main.rs"
 
 [dependencies]

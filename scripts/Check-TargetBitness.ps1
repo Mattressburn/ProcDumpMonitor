@@ -12,7 +12,7 @@
   is run as a 64-BIT process by the 64-bit CLR. Reading Machine alone would
   call it 32-bit and pick the wrong ProcDump.
 
-  This mirrors exactly what ProcDumpMonitor's bitness::bitness_from_pe does,
+  This mirrors exactly what LogDump's bitness::bitness_from_pe does,
   so it is the field check for "is the tool going to pick the right binary?"
 
 .PARAMETER Path
@@ -108,4 +108,4 @@ $Path | ForEach-Object { Get-TargetBitness $_ } |
 
 Write-Host ""
 Write-Host "Compare RESOLVED against Task Manager's Platform / '32 bit' column." -ForegroundColor Yellow
-Write-Host "They must agree. A mismatch means ProcDumpMonitor would pick the wrong binary." -ForegroundColor Yellow
+Write-Host "They must agree. A mismatch means LogDump would pick the wrong binary." -ForegroundColor Yellow

@@ -80,7 +80,7 @@ pub fn run() {
     nwg::Window::builder()
         .size((920, 780))
         .center(true)
-        .title("ProcDump Monitor")
+        .title("LogDump")
         .icon(icon.as_ref())
         .flags(nwg::WindowFlags::WINDOW)
         .build(&mut window)
@@ -95,7 +95,7 @@ pub fn run() {
     // ---- Sidebar chrome ----------------------------------------------------
     let mut app_title = nwg::Label::default();
     nwg::Label::builder()
-        .text("ProcDump Monitor")
+        .text("LogDump")
         .position((24, 28))
         .size((200, 26))
         .parent(&window)
