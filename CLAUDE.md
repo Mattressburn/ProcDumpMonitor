@@ -31,6 +31,39 @@ its requested size IS the outer size — pad height for the title bar or bottom
 controls clip off the client area. Labels take `&` literally (STATIC); only
 BUTTON/checkbox captions need `&&` to render one `&`.
 
+## Bitness selection (shipped 2026-07-26 — do not regress)
+
+ProcDump ships as `procdump.exe` (32-bit) and `procdump64.exe` (64-bit) and the
+bitness **must** match the target. A 32-bit ProcDump **cannot capture a 64-bit
+process at all**; a 64-bit ProcDump on a WOW64 process captures the 64-bit view
+and the 32-bit managed stacks are unusable.
+
+- **`bitness::resolve(cfg)` is the single source of truth.** The monitor
+  (`monitor.rs`) and the GUI label (`page_monitor.rs`) both call it. Never
+  reintroduce a second implementation — three used to coexist and that WAS the
+  bug (an inline `!= "x86"` in the monitor, a hardcoded `true` in the GUI).
+  Use `bitness::os_is_64()`, never a local env check.
+- Resolution order: **PE header on disk** (works when the target isn't
+  running, which is what makes `-w` correct) → runtime `detect()` (Process
+  targets only) → `Unknown`. Do NOT invert to detect-first.
+- **`Machine == 0x014C` does NOT mean 32-bit.** A managed PE32 with `ILONLY`
+  and neither `32BITREQUIRED` nor `32BITPREFERRED` (i.e. .NET **AnyCPU**) runs
+  **64-bit**. `bitness_from_pe` reads the COR20 header (data directory 14,
+  Flags at COR20 +16) to decide. Every C·CURE target is .NET, so this is the
+  main path. Do NOT "simplify" it back to a Machine-only check.
+- **One `File::open` drives both PE walks.** Two opens meant a transient I/O
+  failure on the second yielded X86, which the monitor then cached for its
+  whole lifetime — one blip permanently pinned a 64-bit target to the wrong
+  binary. A failed read must yield `Unknown` (which does not settle and so
+  retries), never X86.
+- The monitor caches the answer and re-resolves only while `Unknown`;
+  `resolve()` spawns `reg.exe` for Service targets, so keep it off timer-driven
+  and per-keystroke paths. `write_fields` must stay cheap; the resolve+capture
+  lives in `save()`.
+- Field check: `scripts/Check-TargetBitness.ps1` mirrors `bitness_from_pe`.
+  No args → scans running `SoftwareHouse.*`. Compare its RESOLVED column
+  against Task Manager's Platform column.
+
 ## Build / test (Rust)
 
 - Cargo is NOT on PATH: use `%USERPROFILE%\.cargo\bin\cargo.exe`, run from `rust/`.
@@ -40,7 +73,7 @@ BUTTON/checkbox captions need `&&` to render one `&`.
   release exes must keep `requireAdministrator`.
 - `cargo test` needs `PDM_TEST_MANIFEST=1` (the admin manifest makes the test exe
   unlaunchable from an unelevated shell).
-- Size gate: release exe ≈ 1.97MB (`opt-level=z`, lto, `panic="abort"` — all
+- Size gate: release exe ≈ 2.07MB (2,071,040 B; gate 2,097,152, ~26KB headroom) (`opt-level=z`, lto, `panic="abort"` — all
   deliberate; grew from 1.86MB when the log-collector subsystem + 2 dialogs landed).
 
 ## GUI end-to-end testing
