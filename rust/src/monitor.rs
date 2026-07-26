@@ -34,6 +34,21 @@ pub fn run(mut cfg: Config) {
     logger::log("Monitor", "ProcDump Monitor started.");
     logger::log("Monitor", &format!("Target: {} ({:?})", cfg.target_name, cfg.target_type));
 
+    // Config::load falls back to Config::default() on a missing or unparseable
+    // file, and nothing downstream rejects an empty name: bitness::resolve
+    // would be re-run every cycle forever (a Toolhelp snapshot per cycle, and
+    // detect() matches on "" == "" so an empty name can latch onto a nameless
+    // process), and ProcDump would be launched with no target at all.
+    //
+    // The guard lives HERE, not in cli.rs, because run() is the one function
+    // every caller routes through and this is the log file "View Logs" opens —
+    // a scheduled task has no console to print to. Accepted: the process still
+    // exits 0, so Task Scheduler's Last Run Result reads success.
+    if cfg.target_name.trim().is_empty() {
+        logger::log("Monitor", "No TargetName configured - nothing to monitor. Exiting.");
+        return;
+    }
+
     // Bitness-based binary switch (non-fatal on failure). Resolved in the loop,
     // not here: with -w (the default) the monitor is armed BEFORE the target
     // exists, so a one-shot resolve at startup answers Unknown and every target

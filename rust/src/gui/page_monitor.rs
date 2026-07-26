@@ -249,7 +249,7 @@ fn bitness_text(cfg: &Config) -> String {
     bitness_label(b, source, &bitness::select_binary(b, &pd_dir, bitness::os_is_64()))
 }
 
-pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage {
+pub fn build(parent: &nwg::Frame, state: Rc<super::WizardState>) -> MonitorPage {
     let header_font = theme::semibold(15);
     let mut captions: Vec<nwg::Label> = Vec::new();
 
@@ -394,7 +394,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage
         option_handles,
         suppress_custom: Cell::new(false),
     };
-    page.refresh_targets();
+    page.refresh_targets(&state);
     page
 }
 
@@ -464,7 +464,14 @@ impl MonitorPage {
 
     /// Rebuild the combined target list, keeping the current choice when it
     /// survives the refresh and otherwise applying the default.
-    pub fn refresh_targets(&self) {
+    ///
+    /// Takes `state` ONLY to refresh the bitness label afterwards: this method
+    /// changes the selection (Refresh, and the CrossFire default), and a label
+    /// left describing the previous target is exactly the GUI-vs-monitor
+    /// divergence this page exists to remove. Callers are `build()` and the
+    /// Refresh / "include stopped services" handler — both user-paced, never
+    /// the 3s status timer, so the extra `resolve` is affordable.
+    pub fn refresh_targets(&self, state: &super::WizardState) {
         // What is already chosen: the combo's pick, else a manual override from
         // the Advanced dialog (also a deliberate choice — and it WINS in
         // effective_target(), so defaulting the combo past it would put a
@@ -485,6 +492,9 @@ impl MonitorPage {
         self.cmb_target.set_collection(labels);
         self.cmb_target.set_selection(Some(target_selection(&entries, Some(&prior))));
         *self.entries.borrow_mut() = entries;
+        // probe_cfg -> write_fields, NEVER save(): save() DPAPI-encrypts the
+        // typed webhook URL into the throwaway clone and clears the live field.
+        self.update_bitness(&self.probe_cfg(state));
     }
 
     fn selected_entry(&self) -> Option<TargetEntry> {
@@ -599,8 +609,24 @@ impl MonitorPage {
 
     /// Shows the bitness the MONITOR will resolve, using the same code path,
     /// so the preview cannot disagree with runtime behaviour.
+    ///
+    /// The target ON SCREEN is applied to a clone first, so the label can never
+    /// describe a stale one. Without it, `load()` — which is handed the
+    /// PERSISTED config — leaves the label blank on a fresh install while the
+    /// combo already shows the CrossFire default. This is the single choke
+    /// point every caller routes through; keep the rule here rather than
+    /// re-deriving it at each call site.
+    ///
+    /// `set_target` is cheap and control-pure (no filesystem, no registry), and
+    /// it is `effective_target()` — manual override beats the dropdown — because
+    /// that is exactly what `write_fields` feeds the monitor. When an Advanced-
+    /// dialog override is live the label describes IT, not the visible combo
+    /// row; that is correct, not a bug.
     fn update_bitness(&self, cfg: &Config) {
-        self.lbl_bitness.set_text(&bitness_text(cfg));
+        let mut c = cfg.clone();
+        let (name, ttype) = self.effective_target();
+        bitness::set_target(&mut c, &name, ttype);
+        self.lbl_bitness.set_text(&bitness_text(&c));
     }
 
     pub fn browse_procdump_path(&self, parent: nwg::ControlHandle) {

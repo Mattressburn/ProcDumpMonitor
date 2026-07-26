@@ -9,6 +9,11 @@ const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
 const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
 const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
 
+// COR20 (CLI) header Flags — CorHdr.h. ILONLY (0x1) is deliberately NOT part of
+// the predicate: see `bitness_from_pe`.
+const COMIMAGE_FLAGS_32BITREQUIRED: u32 = 0x0000_0002;
+const COMIMAGE_FLAGS_32BITPREFERRED: u32 = 0x0002_0000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bitness { Unknown, X86, X64 }
 
@@ -44,14 +49,140 @@ pub fn pe_machine(path: &Path) -> Option<u16> {
     Some(u16::from_le_bytes([head[4], head[5]]))
 }
 
-/// Map a PE machine value to the binary-selection decision.
+/// Read `len` bytes at `off`. Seeking past EOF is legal on Windows, so the
+/// short/truncated case surfaces as `read_exact` failing, not as a panic.
+fn read_at(f: &mut std::fs::File, off: u64, buf: &mut [u8]) -> Option<()> {
+    use std::io::{Read, Seek, SeekFrom};
+    f.seek(SeekFrom::Start(off)).ok()?;
+    f.read_exact(buf).ok()?;
+    Some(())
+}
+
+/// Translate an RVA to a file offset by walking the section table.
+///
+/// Everything is computed in u64 so `va + raw_size` cannot wrap on a hostile
+/// `SizeOfRawData` (both inputs are u32, the sum fits comfortably).
+fn rva_to_file_offset(
+    f: &mut std::fs::File,
+    section_table: u64,
+    n_sections: u64,
+    rva: u64,
+) -> Option<u64> {
+    // NumberOfSections is an attacker-controlled u16. The PE spec caps an
+    // image at 96 sections; without this cap a malformed file costs 65535
+    // seek+read pairs inside the monitor loop.
+    for i in 0..n_sections.min(96) {
+        // Section header: Name(8) VirtualSize(4) VirtualAddress(4)
+        //                 SizeOfRawData(4) PointerToRawData(4) ...
+        let mut s = [0u8; 24];
+        read_at(f, section_table.checked_add(i.checked_mul(40)?)?, &mut s)?;
+        let va = u32::from_le_bytes([s[12], s[13], s[14], s[15]]) as u64;
+        let raw_size = u32::from_le_bytes([s[16], s[17], s[18], s[19]]) as u64;
+        let raw_ptr = u32::from_le_bytes([s[20], s[21], s[22], s[23]]) as u64;
+        if rva >= va && rva < va + raw_size {
+            return raw_ptr.checked_add(rva - va);
+        }
+    }
+    None
+}
+
+/// `IMAGE_COR20_HEADER.Flags` for a managed image, or None when the file is
+/// unmanaged, truncated, or malformed anywhere along the walk.
+///
+/// PANIC-FREE BY CONSTRUCTION, and that is a hard requirement: `panic = "abort"`
+/// means any panic here kills the monitor process. Every byte comes from a
+/// fixed-size `read_exact` into a fixed-size array (so no slicing can be out of
+/// range), every offset is `checked_add`/`checked_mul`, and every fallible step
+/// returns None. There is no indexing by a value read from the file.
+fn cor20_flags(path: &Path) -> Option<u32> {
+    let mut f = std::fs::File::open(path).ok()?;
+
+    let mut lfanew = [0u8; 4];
+    read_at(&mut f, 0x3C, &mut lfanew)?;
+    let pe_off = u32::from_le_bytes(lfanew) as u64;
+
+    // "PE\0\0"(4) Machine(2) NumberOfSections(2) TimeDateStamp(4)
+    // PointerToSymbolTable(4) NumberOfSymbols(4) SizeOfOptionalHeader(2)
+    // Characteristics(2) = 24 bytes.
+    let mut coff = [0u8; 24];
+    read_at(&mut f, pe_off, &mut coff)?;
+    if &coff[0..4] != b"PE\0\0" {
+        return None;
+    }
+    let n_sections = u16::from_le_bytes([coff[6], coff[7]]) as u64;
+    let opt_size = u16::from_le_bytes([coff[20], coff[21]]) as u64;
+    let opt_start = pe_off.checked_add(24)?;
+
+    // The optional-header magic decides where NumberOfRvaAndSizes and the data
+    // directories sit. Anything else is not an image we will guess about.
+    let mut magic = [0u8; 2];
+    read_at(&mut f, opt_start, &mut magic)?;
+    let (n_rva_off, dirs_off) = match u16::from_le_bytes(magic) {
+        0x10B => (92u64, 96u64),  // PE32
+        0x20B => (108u64, 112u64), // PE32+
+        _ => return None,
+    };
+
+    // Directory index 14 is the CLR runtime header. A file declaring fewer than
+    // 15 directories has no such entry, and reading it anyway would land in the
+    // section table and hand back a garbage RVA that might even resolve.
+    let mut n_rva = [0u8; 4];
+    read_at(&mut f, opt_start.checked_add(n_rva_off)?, &mut n_rva)?;
+    if u32::from_le_bytes(n_rva) <= 14 {
+        return None;
+    }
+
+    let mut dir = [0u8; 8]; // RVA(4) + Size(4)
+    read_at(&mut f, opt_start.checked_add(dirs_off)?.checked_add(14 * 8)?, &mut dir)?;
+    let rva = u32::from_le_bytes([dir[0], dir[1], dir[2], dir[3]]) as u64;
+    if rva == 0 {
+        return None; // no CLI header — an ordinary native binary
+    }
+
+    let at = rva_to_file_offset(&mut f, opt_start.checked_add(opt_size)?, n_sections, rva)?;
+
+    // COR20: cb(4) MajorRuntimeVersion(2) MinorRuntimeVersion(2)
+    //        MetaData RVA(4)+Size(4) Flags(4)  -> Flags is at +16.
+    let mut flags = [0u8; 4];
+    read_at(&mut f, at.checked_add(16)?, &mut flags)?;
+    Some(u32::from_le_bytes(flags))
+}
+
+/// Map a PE on disk to the binary-selection decision.
+///
+/// `Machine` ALONE DOES NOT ANSWER THIS for .NET, which is this product's whole
+/// target population. Every managed assembly is emitted as a PE32 with
+/// `Machine == 0x014C`; an AnyCPU one (no `32BITREQUIRED`, no `32BITPREFERRED`)
+/// is loaded by the 64-bit CLR as a **64-bit process**. Classifying it X86 picks
+/// `procdump.exe`, and 32-bit ProcDump cannot attach to a 64-bit target at all —
+/// no dump, not a truncated one. So an I386 machine word means "consult the
+/// COR20 header", not "X86".
+///
+/// ILONLY is deliberately NOT required. Adding it could only move an image from
+/// X64 to X86, which is the catastrophic direction; and it buys nothing, because
+/// mixed-mode (non-ILONLY) x86 images get `32BITREQUIRED` from the linker and
+/// already land on X86 here.
+///
+/// X64 here means "the CLR runs this 64-bit ON A 64-BIT OS". The 32-bit-OS case
+/// is `select_binary`'s job (it short-circuits on `os_is_64`), not this
+/// function's — do not add an env lookup to keep it pure.
 ///
 /// NOTE: ARM64 and AMD64 both map to X64. That is correct for choosing a
 /// ProcDump binary, but it means the two are indistinguishable here — do not
 /// assert anything stronger.
 pub fn bitness_from_pe(path: &Path) -> Bitness {
     match pe_machine(path) {
-        Some(IMAGE_FILE_MACHINE_I386) => Bitness::X86,
+        Some(IMAGE_FILE_MACHINE_I386) => match cor20_flags(path) {
+            // Managed and neither flag set: AnyCPU -> runs 64-bit.
+            Some(f)
+                if f & COMIMAGE_FLAGS_32BITREQUIRED == 0
+                    && f & COMIMAGE_FLAGS_32BITPREFERRED == 0 =>
+            {
+                Bitness::X64
+            }
+            // Managed-but-pinned-32, unmanaged, or unwalkable: genuinely x86.
+            _ => Bitness::X86,
+        },
         Some(IMAGE_FILE_MACHINE_AMD64) | Some(IMAGE_FILE_MACHINE_ARM64) => Bitness::X64,
         _ => Bitness::Unknown,
     }
@@ -377,7 +508,11 @@ fn detect(_process_name: &str) -> Bitness {
 /// and the GUI label.
 ///
 ///   1. PE header from the resolved path — correct even if the target has
-///      never run, which is what makes `-w` work.
+///      never run, which is what makes `-w` work. "PE header" is shorthand:
+///      `bitness_from_pe` also reads the COR20 header, because for a managed
+///      PE32 the `Machine` word alone would misclassify every AnyCPU assembly
+///      as X86. Step 2 CANNOT rescue that — an I386 machine word never yields
+///      Unknown, so this step always answers and always wins.
 ///   2. Runtime detection — covers a RUNNING PROCESS target whose PE we could
 ///      not read (no path resolved, or the file is unreadable/not a PE).
 ///      Deliberately NOT tried for Service targets: `detect` looks up a
@@ -654,6 +789,241 @@ mod tests {
         let me = std::env::current_exe().unwrap();
         assert_eq!(pe_machine(&me), Some(0x8664));
         assert_eq!(bitness_from_pe(&me), Bitness::X64);
+
+        // ...and an unmanaged AMD64 system binary, so the AMD64 arm is pinned
+        // on a file the COR20 walk is never even consulted for.
+        let p = std::path::PathBuf::from(r"C:\Windows\System32\cmd.exe");
+        if !p.exists() {
+            eprintln!("skipping: {} not present on this host", p.display());
+            return;
+        }
+        assert_eq!(pe_machine(&p), Some(0x8664));
+        assert_eq!(bitness_from_pe(&p), Bitness::X64);
+    }
+
+    // ------------------------------------------------- AnyCPU / COR20 (C1) --
+
+    #[test]
+    fn anycpu_managed_pe32_resolves_as_64bit() {
+        // THE regression this fix exists for. AddInProcess.exe is a real
+        // AnyCPU assembly: machine=0x014C, ILONLY, no 32BITREQUIRED, no
+        // 32BITPREFERRED — the 64-bit CLR runs it as a 64-bit process, so
+        // procdump.exe could not attach to it at all.
+        //
+        // Skip (do not fail) if absent: it ships with the .NET Framework, which
+        // is not guaranteed on an arbitrary build host.
+        let p = std::path::PathBuf::from(
+            r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\AddInProcess.exe",
+        );
+        if !p.exists() {
+            eprintln!("skipping: {} not present on this host", p.display());
+            return;
+        }
+        assert_eq!(pe_machine(&p), Some(0x014C), "precondition: it IS a PE32 I386 image");
+        let flags = cor20_flags(&p).expect("precondition: it IS managed");
+        assert_eq!(flags & COMIMAGE_FLAGS_32BITREQUIRED, 0, "precondition: not 32BITREQUIRED");
+        assert_eq!(flags & COMIMAGE_FLAGS_32BITPREFERRED, 0, "precondition: not 32BITPREFERRED");
+        assert_eq!(
+            bitness_from_pe(&p),
+            Bitness::X64,
+            "AnyCPU managed PE32 must not be classified X86"
+        );
+    }
+
+    /// A minimal but structurally valid PE: DOS header, COFF header, an
+    /// optional header with 16 data directories, one section, and a COR20
+    /// header at file offset 0x400 (RVA 0x1000).
+    ///
+    /// Synthetic rather than real because the flag combinations that
+    /// distinguish the predicate's two terms DO NOT OCCUR in shipped binaries:
+    /// a real prefer-32 assembly sets 32BITREQUIRED *and* 32BITPREFERRED
+    /// together, so no real file can kill the 32BITPREFERRED term on its own.
+    fn synth_pe(machine: u16, magic: u16, n_rva: u32, clr_rva: u32, flags: u32) -> Vec<u8> {
+        let (n_rva_off, dirs_off) = if magic == 0x20B { (108usize, 112usize) } else { (92, 96) };
+        let opt_size = dirs_off + 16 * 8;
+        let opt = 0x58usize; // 0x40 PE sig + 24-byte COFF header
+
+        let mut v = vec![0u8; 0x600];
+        v[0..2].copy_from_slice(b"MZ");
+        v[0x3C..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+        v[0x40..0x44].copy_from_slice(b"PE\0\0");
+        v[0x44..0x46].copy_from_slice(&machine.to_le_bytes());
+        v[0x46..0x48].copy_from_slice(&1u16.to_le_bytes()); // NumberOfSections
+        v[0x54..0x56].copy_from_slice(&(opt_size as u16).to_le_bytes());
+
+        v[opt..opt + 2].copy_from_slice(&magic.to_le_bytes());
+        v[opt + n_rva_off..opt + n_rva_off + 4].copy_from_slice(&n_rva.to_le_bytes());
+        let d14 = opt + dirs_off + 14 * 8;
+        v[d14..d14 + 4].copy_from_slice(&clr_rva.to_le_bytes());
+        v[d14 + 4..d14 + 8].copy_from_slice(&72u32.to_le_bytes()); // Size
+
+        let sec = opt + opt_size; // section table
+        v[sec..sec + 5].copy_from_slice(b".text");
+        v[sec + 12..sec + 16].copy_from_slice(&0x1000u32.to_le_bytes()); // VirtualAddress
+        v[sec + 16..sec + 20].copy_from_slice(&0x200u32.to_le_bytes()); // SizeOfRawData
+        v[sec + 20..sec + 24].copy_from_slice(&0x400u32.to_le_bytes()); // PointerToRawData
+
+        v[0x400..0x404].copy_from_slice(&72u32.to_le_bytes()); // COR20 cb
+        v[0x410..0x414].copy_from_slice(&flags.to_le_bytes()); // COR20 Flags (+16)
+        v
+    }
+
+    /// Write `bytes` to a uniquely named temp file and hand back the path.
+    fn tmp_pe(tag: &str, bytes: &[u8]) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let p = std::env::temp_dir().join(format!("pdm_pe_{tag}_{n}.bin"));
+        std::fs::write(&p, bytes).unwrap();
+        p
+    }
+
+    const ILONLY: u32 = 0x1;
+
+    #[test]
+    fn managed_pe32_flags_decide_the_anycpu_answer() {
+        // The truth table the predicate encodes. Each row kills a mutant:
+        //  * row 1 vs row 2 kills `!32BITREQUIRED`
+        //  * row 1 vs row 3 kills `!32BITPREFERRED` — and ONLY a synthetic file
+        //    can, because real prefer-32 images set both flags (row 4).
+        for (flags, want, why) in [
+            (ILONLY, Bitness::X64, "AnyCPU"),
+            (ILONLY | COMIMAGE_FLAGS_32BITREQUIRED, Bitness::X86, "x86-only"),
+            (ILONLY | COMIMAGE_FLAGS_32BITPREFERRED, Bitness::X86, "prefer-32 alone"),
+            (
+                ILONLY | COMIMAGE_FLAGS_32BITREQUIRED | COMIMAGE_FLAGS_32BITPREFERRED,
+                Bitness::X86,
+                "prefer-32 as really shipped",
+            ),
+            // ILONLY clear (mixed mode) with neither pin: still X64. Pins the
+            // documented decision NOT to gate on ILONLY, so a later "hardening"
+            // that adds the term goes red instead of silently re-breaking C1.
+            (0, Bitness::X64, "no ILONLY, no pin"),
+        ] {
+            let p = tmp_pe("flags", &synth_pe(0x014C, 0x10B, 16, 0x1000, flags));
+            let got = bitness_from_pe(&p);
+            let _ = std::fs::remove_file(&p);
+            assert_eq!(got, want, "flags={flags:#x} ({why})");
+        }
+    }
+
+    #[test]
+    fn unmanaged_i386_stays_x86() {
+        // CLR directory RVA == 0. Kills a mutant that answers X64 whenever the
+        // machine word is I386 — i.e. the "just flip I386 to X64" non-fix.
+        let p = tmp_pe("native", &synth_pe(0x014C, 0x10B, 16, 0, ILONLY));
+        let got = bitness_from_pe(&p);
+        let flags = cor20_flags(&p);
+        let _ = std::fs::remove_file(&p);
+        assert_eq!(flags, None, "RVA 0 must read as unmanaged");
+        assert_eq!(got, Bitness::X86);
+    }
+
+    #[test]
+    fn amd64_never_consults_the_cor20_header() {
+        // A managed AMD64 image (Machine 0x8664 + PE32+) with 32BITREQUIRED
+        // set. The flags say x86; the machine word wins, as it must.
+        let p = tmp_pe(
+            "amd64mgd",
+            &synth_pe(0x8664, 0x20B, 16, 0x1000, ILONLY | COMIMAGE_FLAGS_32BITREQUIRED),
+        );
+        let got = bitness_from_pe(&p);
+        let _ = std::fs::remove_file(&p);
+        assert_eq!(got, Bitness::X64);
+    }
+
+    #[test]
+    fn cor20_walk_rejects_malformed_images_without_panicking() {
+        // Every failure mode of the walk, all of which must degrade to the
+        // machine word's X86 rather than abort the process (panic = "abort").
+        let cases: Vec<(&str, Vec<u8>)> = vec![
+            // Fewer than 15 data directories: index 14 does not exist, even
+            // though the bytes there look like a usable RVA.
+            ("few_dirs", synth_pe(0x014C, 0x10B, 14, 0x1000, ILONLY)),
+            // RVA that no section covers.
+            ("bad_rva", synth_pe(0x014C, 0x10B, 16, 0xFFFF_F000, ILONLY)),
+            // RVA whose section maps it past the end of the file.
+            ("rva_past_eof", synth_pe(0x014C, 0x10B, 16, 0x11FF, ILONLY)),
+            // Optional-header magic that is neither PE32 nor PE32+.
+            ("bad_magic", synth_pe(0x014C, 0xDEAD, 16, 0x1000, ILONLY)),
+        ];
+        for (tag, bytes) in cases {
+            let p = tmp_pe(tag, &bytes);
+            let got = bitness_from_pe(&p);
+            let flags = cor20_flags(&p);
+            let _ = std::fs::remove_file(&p);
+            assert_eq!(flags, None, "{tag}: walk should have refused");
+            assert_eq!(got, Bitness::X86, "{tag}");
+        }
+    }
+
+    #[test]
+    fn cor20_walk_survives_truncation_at_every_length() {
+        // Truncate a valid managed PE32 at every 16-byte boundary. Any read the
+        // walk performs can land past EOF; none may panic. Answers are only
+        // ever X86 (walk refused) or X64 (walk completed) — never a crash.
+        let full = synth_pe(0x014C, 0x10B, 16, 0x1000, ILONLY);
+        for len in (0..full.len()).step_by(16) {
+            let p = tmp_pe("trunc", &full[..len]);
+            let got = bitness_from_pe(&p);
+            let _ = std::fs::remove_file(&p);
+            assert!(
+                matches!(got, Bitness::X86 | Bitness::X64 | Bitness::Unknown),
+                "len={len} produced {got:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_section_walk_is_capped_at_the_pe_spec_limit() {
+        // NumberOfSections is an attacker-controlled u16; without the cap a
+        // malformed file costs up to 65535 seek+read pairs inside the monitor
+        // loop. A short file bounds that by EOF anyway, so timing a small
+        // fixture proves NOTHING — the cap is only observable when the file is
+        // big enough to hold more than 96 section headers.
+        //
+        // So: put the ONLY mapping section at index 200, past the cap but well
+        // inside the file. Capped, the walk refuses (X86); delete `.min(96)`
+        // and it finds the section and answers X64. That is the mutant kill.
+        let mut v = synth_pe(0x014C, 0x10B, 16, 0x1000, ILONLY);
+        let sec = 0x58 + 96 + 16 * 8; // opt_start + SizeOfOptionalHeader
+        v.resize(0x3200, 0);
+        v[0x46..0x48].copy_from_slice(&300u16.to_le_bytes()); // NumberOfSections
+        v[sec + 12..sec + 24].fill(0); // section 0 now maps nothing
+        let s200 = sec + 200 * 40;
+        v[s200 + 12..s200 + 16].copy_from_slice(&0x1000u32.to_le_bytes()); // VirtualAddress
+        v[s200 + 16..s200 + 20].copy_from_slice(&0x200u32.to_le_bytes()); // SizeOfRawData
+        v[s200 + 20..s200 + 24].copy_from_slice(&0x3100u32.to_le_bytes()); // PointerToRawData
+        v[0x3110..0x3114].copy_from_slice(&ILONLY.to_le_bytes()); // COR20 Flags (+16)
+
+        let p = tmp_pe("section200", &v);
+        let got = bitness_from_pe(&p);
+        let _ = std::fs::remove_file(&p);
+        assert_eq!(got, Bitness::X86, "the walk looked past section 96");
+
+        // ...and the pathological count itself must still just refuse.
+        let mut v = synth_pe(0x014C, 0x10B, 16, 0xFFFF_F000, ILONLY);
+        v[0x46..0x48].copy_from_slice(&0xFFFFu16.to_le_bytes());
+        let p = tmp_pe("many_sections", &v);
+        let got = bitness_from_pe(&p);
+        let _ = std::fs::remove_file(&p);
+        assert_eq!(got, Bitness::X86);
+    }
+
+    #[test]
+    fn cor20_flags_refuses_garbage_and_non_pe_files() {
+        let junk = tmp_pe("junk", &[0xABu8; 4096]);
+        assert_eq!(cor20_flags(&junk), None);
+        let _ = std::fs::remove_file(&junk);
+
+        // Valid DOS header, garbage e_lfanew.
+        let bad = tmp_pe("badoff", &dos_header(0xFFFF_FFF0));
+        assert_eq!(cor20_flags(&bad), None);
+        assert_eq!(bitness_from_pe(&bad), Bitness::Unknown);
+        let _ = std::fs::remove_file(&bad);
+
+        let missing = std::env::temp_dir().join("pdm_cor20_does_not_exist.exe");
+        assert_eq!(cor20_flags(&missing), None);
     }
 
     #[test]

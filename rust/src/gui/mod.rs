@@ -391,7 +391,7 @@ pub fn run() {
 
                 // ---- Monitor page ----
                 nwg::Event::OnButtonClick if handle == btn_refresh_h || handle == chk_show_all_h => {
-                    monitor_page.refresh_targets();
+                    monitor_page.refresh_targets(&state);
                 }
                 nwg::Event::OnComboxBoxSelection if handle == cmb_target_h => {
                     monitor_page.on_target_picked(&state);
