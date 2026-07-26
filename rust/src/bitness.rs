@@ -1063,11 +1063,21 @@ mod tests {
 
     #[test]
     fn resolve_of_a_default_config_is_unresolved() {
-        // Empty target_name AND empty target_path is the GUI's state at
-        // startup, and Task 6 calls resolve() on a 3s poll timer — so this is
-        // the most-executed input in the product. running_process_path guards
-        // on is_empty; detect() does not, and matches on `"" == ""`. Nothing
-        // else pins that an empty name cannot latch onto a nameless process.
+        // CORRECTED (task 6): an earlier version of this comment claimed the
+        // GUI's 3s poll timer calls resolve(). It does not — the timer reaches
+        // only refresh_status, and gui/page_monitor.rs::bitness_text
+        // short-circuits on an empty target BEFORE resolve, precisely so an
+        // empty name cannot spawn reg.exe. The GUI never reaches this input.
+        //
+        // It still has a real production caller, just a different one: cli.rs's
+        // `monitor` verb does no target validation, Config::load falls back to
+        // Config::default() on a missing or unparseable file, and monitor.rs's
+        // bitness_step has no empty-name guard — so a misconfigured install
+        // runs resolve(&Config::default()) once per monitor cycle, forever.
+        //
+        // What the assertion pins: running_process_path guards on is_empty;
+        // detect() does not, and matches on `"" == ""`. Nothing else stops an
+        // empty name latching onto a nameless process.
         assert_eq!(resolve(&Config::default()), (Bitness::Unknown, "unresolved"));
     }
 

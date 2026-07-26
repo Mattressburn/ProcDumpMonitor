@@ -217,14 +217,15 @@ fn bitness_label(b: bitness::Bitness, source: &str, choice: &bitness::BinaryChoi
 /// The empty-target guard sits BEFORE `resolve` on purpose: with an empty name
 /// and `TargetType::Service`, `resolve` would spawn `reg.exe` against the bare
 /// `...\Services` key. Callers are `load()` (startup + every sidebar switch
-/// onto Monitor) and `on_target_picked()` — user-paced. Do NOT call this from
-/// `refresh_status` (3s timer) or `write_fields` (per keystroke): for a Service
-/// target `resolve` costs one `reg.exe` spawn.
-fn bitness_text(cfg: &Config, procdump_path: &str) -> String {
+/// onto Monitor), `on_target_picked()` and `on_advanced_changed()` — all
+/// user-paced. Do NOT call this from `refresh_status` (3s timer) or
+/// `write_fields` (per keystroke): for a Service target `resolve` costs one
+/// `reg.exe` spawn.
+fn bitness_text(cfg: &Config) -> String {
     if cfg.target_name.trim().is_empty() {
         return String::new();
     }
-    let pd_dir = std::path::Path::new(procdump_path)
+    let pd_dir = std::path::Path::new(&cfg.proc_dump_path)
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(paths::install_dir);
@@ -464,13 +465,7 @@ impl MonitorPage {
         {
             self.txt_task_name.set_text(&task::auto_task_name(&name));
         }
-        // update_bitness needs a &Config. Build it with the CONTROL-PURE
-        // write_fields on a throwaway clone -- never save(), which would
-        // DPAPI-encrypt the typed webhook URL into the discarded clone and
-        // clear the live field, destroying the user's URL.
-        let mut probe = state.cfg.borrow().clone();
-        self.write_fields(&mut probe);
-        self.update_bitness(&probe, &self.txt_procdump_path.text());
+        self.update_bitness(&self.probe_cfg(state));
         self.refresh_preview(state);
     }
 
@@ -490,10 +485,18 @@ impl MonitorPage {
     }
 
     /// The Advanced dialog edited config fields directly: flip to Custom and
-    /// refresh the preview.
+    /// refresh BOTH previews.
+    ///
+    /// The bitness refresh is not optional: `mod.rs`'s Advanced dispatcher sets
+    /// `manual_target` from the dialog before calling this, so the dialog can
+    /// change the TARGET. Refreshing only the command preview leaves two
+    /// previews on the same page disagreeing until the user switches pages and
+    /// back — which is exactly the "label lies about what the monitor will do"
+    /// defect this page's bitness work exists to kill.
     pub fn on_advanced_changed(&self, state: &super::WizardState) {
         self.cmb_scenario.set_selection(Some(Preset::all().len()));
         state.cfg.borrow_mut().scenario = String::new();
+        self.update_bitness(&self.probe_cfg(state));
         self.refresh_preview(state);
     }
 
@@ -516,19 +519,28 @@ impl MonitorPage {
         self.refresh_preview(state);
     }
 
-    /// Live effective-command preview. Uses the control-pure `write_fields`
-    /// on a throwaway clone -- NOT `save()`, which clears the webhook field
-    /// and would drop the typed URL into the discarded clone.
-    pub fn refresh_preview(&self, state: &super::WizardState) {
+    /// A throwaway Config carrying what is currently ON SCREEN, for the two
+    /// previews (effective command, bitness label).
+    ///
+    /// `write_fields`, NEVER `save()`. save() DPAPI-encrypts the typed webhook
+    /// URL into this discarded clone AND clears the live field, destroying the
+    /// user's URL. That is why the write_fields/save split exists; do not
+    /// "simplify" the two back together.
+    fn probe_cfg(&self, state: &super::WizardState) -> Config {
         let mut cfg = state.cfg.borrow().clone();
         self.write_fields(&mut cfg);
-        self.txt_effective.set_text(&crate::procdump::build_args(&cfg));
+        cfg
+    }
+
+    /// Live effective-command preview.
+    pub fn refresh_preview(&self, state: &super::WizardState) {
+        self.txt_effective.set_text(&crate::procdump::build_args(&self.probe_cfg(state)));
     }
 
     /// Shows the bitness the MONITOR will resolve, using the same code path,
     /// so the preview cannot disagree with runtime behaviour.
-    fn update_bitness(&self, cfg: &Config, procdump_path: &str) {
-        self.lbl_bitness.set_text(&bitness_text(cfg, procdump_path));
+    fn update_bitness(&self, cfg: &Config) {
+        self.lbl_bitness.set_text(&bitness_text(cfg));
     }
 
     pub fn browse_procdump_path(&self, parent: nwg::ControlHandle) {
@@ -622,7 +634,7 @@ impl MonitorPage {
         self.txt_webhook.set_enabled(cfg.webhook_enabled);
         set_checked(&self.chk_autocollect, cfg.auto_collect_on_dump);
 
-        self.update_bitness(cfg, &cfg.proc_dump_path);
+        self.update_bitness(cfg);
         self.suppress_custom.set(prev);
     }
 
@@ -952,10 +964,12 @@ mod tests {
         d
     }
 
-    /// Path handed to `bitness_text` — it takes the ProcDump EXE path and uses
-    /// the parent, which is what the txt_procdump_path box holds.
-    fn pd_exe(d: &std::path::Path) -> String {
-        d.join("procdump64.exe").to_string_lossy().to_string()
+    /// `bitness_text` reads `cfg.proc_dump_path` and uses its PARENT as the
+    /// ProcDump directory, so point the config at an exe inside `d`.
+    fn cfg_with_pd(d: &std::path::Path) -> Config {
+        let mut c = Config::default();
+        c.proc_dump_path = d.join("procdump64.exe").to_string_lossy().to_string();
+        c
     }
 
     fn my_process_name() -> String {
@@ -1061,15 +1075,15 @@ mod tests {
     #[test]
     fn text_is_empty_for_an_empty_target() {
         let d = dir_with(&["procdump.exe", "procdump64.exe"]);
-        assert_eq!(bitness_text(&Config::default(), &pd_exe(&d)), "");
+        assert_eq!(bitness_text(&cfg_with_pd(&d)), "");
 
         // Service type too: this is the guard that keeps an empty name from
         // spawning reg.exe against the bare ...\Services key. The empty return
         // is the observable half; the absent spawn is inspection-only.
-        let mut c = Config::default();
+        let mut c = cfg_with_pd(&d);
         c.target_type = TargetType::Service;
         c.target_name = "   ".into();
-        assert_eq!(bitness_text(&c, &pd_exe(&d)), "");
+        assert_eq!(bitness_text(&c), "");
     }
 
     #[test]
@@ -1077,11 +1091,11 @@ mod tests {
         // Also kills a `bitness::resolve` -> `bitness::detect` regression: the
         // runtime path would render "(via running process)".
         let d = dir_with(&["procdump.exe", "procdump64.exe"]);
-        let mut c = Config::default();
+        let mut c = cfg_with_pd(&d);
         c.target_type = TargetType::Process;
         c.target_name = my_process_name();
         assert_eq!(
-            bitness_text(&c, &pd_exe(&d)),
+            bitness_text(&c),
             "64-bit process -> procdump64.exe (via PE header)"
         );
     }
@@ -1096,11 +1110,11 @@ mod tests {
             return;
         }
         let d = dir_with(&["procdump.exe", "procdump64.exe"]);
-        let mut c = Config::default();
+        let mut c = cfg_with_pd(&d);
         c.target_type = TargetType::Service;
         c.target_name = "Spooler".into();
         assert_eq!(
-            bitness_text(&c, &pd_exe(&d)),
+            bitness_text(&c),
             "64-bit process -> procdump64.exe (via PE header)"
         );
     }
@@ -1108,11 +1122,11 @@ mod tests {
     #[test]
     fn text_is_unresolved_for_a_target_that_cannot_be_found() {
         let d = dir_with(&["procdump.exe", "procdump64.exe"]);
-        let mut c = Config::default();
+        let mut c = cfg_with_pd(&d);
         c.target_type = TargetType::Process;
         c.target_name = "PdmDefinitelyNotRunning.exe".into();
         assert_eq!(
-            bitness_text(&c, &pd_exe(&d)),
+            bitness_text(&c),
             "Unknown bitness -> procdump64.exe (default) \
              - could not determine target bitness; verify manually."
         );
