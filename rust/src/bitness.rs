@@ -136,11 +136,10 @@ const SERVICES_KEY: &str = r"HKLM\SYSTEM\CurrentControlSet\Services";
 /// True unless we are on a 32-bit OS.
 ///
 /// This is the intended single source of truth, but it is NOT yet the only
-/// one: as of Task 3 three implementations coexist. `monitor.rs:40-41` still
-/// carries its own inline copy (and a case-SENSITIVE `!= "x86"` at that), and
-/// `gui/page_monitor.rs:485` hardcodes `true`. Task 5 replaces the monitor's
-/// copy and Task 6 replaces the GUI's constant; only then can the two actually
-/// not disagree. Until both land, do not read this comment as a guarantee.
+/// one. Task 5 replaced the monitor's inline copy (a case-SENSITIVE
+/// `!= "x86"`) with a call to this; `gui/page_monitor.rs:485` still hardcodes
+/// `true` and is Task 6's job. Until that lands, do not read this comment as a
+/// guarantee.
 pub fn os_is_64() -> bool {
     os_is_64_from(
         std::env::var("PROCESSOR_ARCHITECTURE").ok().as_deref(),

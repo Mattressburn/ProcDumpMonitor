@@ -34,19 +34,18 @@ pub fn run(mut cfg: Config) {
     logger::log("Monitor", "ProcDump Monitor started.");
     logger::log("Monitor", &format!("Target: {} ({:?})", cfg.target_name, cfg.target_type));
 
-    // Bitness-based binary switch (non-fatal on failure)
+    // Bitness-based binary switch (non-fatal on failure). Resolved in the loop,
+    // not here: with -w (the default) the monitor is armed BEFORE the target
+    // exists, so a one-shot resolve at startup answers Unknown and every target
+    // gets procdump64.exe. See `bitness_step`.
     let pd_dir = Path::new(&cfg.proc_dump_path).parent()
         .map(|p| p.to_path_buf()).unwrap_or_else(paths::install_dir);
-    let os_is_64 = std::env::var("PROCESSOR_ARCHITECTURE").map(|a| a != "x86").unwrap_or(true)
-        || std::env::var("PROCESSOR_ARCHITEW6432").is_ok();
-    let choice = bitness::select_binary(bitness::detect(&cfg.target_name), &pd_dir, os_is_64);
-    logger::log("Monitor", &format!("Bitness: {}", choice.summary));
-    if let Some(w) = &choice.warning { logger::log("Monitor", &format!("Bitness WARNING: {w}")); }
-    if choice.actual.exists() && choice.actual != Path::new(&cfg.proc_dump_path) {
-        logger::log("Monitor", &format!("Switching ProcDump binary -> {}", choice.actual.display()));
-        cfg.proc_dump_path = choice.actual.display().to_string();
-    }
+    let os64 = bitness::os_is_64();
+    let mut resolved: Option<bitness::Bitness> = None;
 
+    // build_args does not contain the binary path, so this stays true across a
+    // switch — logged once here so the log is diagnosable even if bitness never
+    // resolves.
     logger::log("Monitor", &format!("ProcDump args: {}", procdump::build_args(&cfg)));
 
     if std::fs::create_dir_all(&cfg.dump_directory).is_err() {
@@ -63,6 +62,11 @@ pub fn run(mut cfg: Config) {
         h.last_error.clear();
         h.disk_space_low = false;
         logger::log("Monitor", "-- Cycle start --");
+
+        // Before run_procdump_cycle, which reads cfg.proc_dump_path.
+        for line in bitness_step(&mut resolved, &mut cfg, &pd_dir, os64, bitness::resolve) {
+            logger::log("Monitor", &line);
+        }
 
         // Disk guard
         let mut skip_cycle = false;
@@ -103,6 +107,69 @@ pub fn run(mut cfg: Config) {
         }
     }
     logger::log("Monitor", "ProcDump Monitor stopped.");
+}
+
+/// One cycle's bitness bookkeeping: re-resolve while the answer is still
+/// Unknown, switch `cfg.proc_dump_path` when the chosen binary changes, and
+/// hand back the lines to log.
+///
+/// Lines are RETURNED rather than logged, and `resolve` is injected, so the
+/// decision is testable without a running monitor.
+///
+/// `cached` is both the cache and the "have we ever resolved" flag:
+/// `None` = never, `Some(Unknown)` = tried and failed (retry), `Some(b)` =
+/// settled (stop). It is an Option and not a bare `Bitness` because a run where
+/// the target never starts AND the configured path already equals the chosen
+/// default would otherwise log nothing about bitness at all — a regression
+/// against the old unconditional startup line.
+///
+/// ponytail: re-resolution is per cycle, unrate-limited. In the designed
+/// workflow that is rare — with -w the ProcDump child blocks until the target
+/// appears, so a "cycle" is as long as the target's life. Ceiling: with
+/// `restart_delay_seconds == 0` AND a ProcDump that exits instantly (missing
+/// binary) the pre-existing tight spin now also spawns one reg.exe per
+/// iteration for Service targets. Upgrade path: a min-interval on the retry,
+/// if that pathology ever shows up in the field.
+fn bitness_step(
+    cached: &mut Option<bitness::Bitness>,
+    cfg: &mut Config,
+    pd_dir: &Path,
+    os64: bool,
+    resolve: fn(&Config) -> (bitness::Bitness, &'static str),
+) -> Vec<String> {
+    // Once known it cannot change without the config changing, and resolving
+    // spawns reg.exe for Service targets — so only retry while Unknown.
+    if matches!(cached, Some(b) if *b != bitness::Bitness::Unknown) {
+        return Vec::new();
+    }
+    let first = cached.is_none();
+    let (b, source) = resolve(cfg);
+    *cached = Some(b);
+
+    let choice = bitness::select_binary(b, pd_dir, os64);
+    // Compare the chosen BINARY PATH, not the source string: the source can
+    // change while the selected binary does not.
+    let switching = choice.actual.exists() && choice.actual != Path::new(&cfg.proc_dump_path);
+
+    // This runs every cycle while Unknown; a line per cycle would fill the log.
+    // The three arms that may speak: the first attempt, an actual switch, and
+    // the Unknown -> known transition (which fires at most once — after it,
+    // `cached` is settled and every later cycle returns above).
+    if !first && !switching && b == bitness::Bitness::Unknown {
+        return Vec::new();
+    }
+
+    let mut lines = Vec::new();
+    if let Some(w) = &choice.warning {
+        lines.push(format!("Bitness WARNING: {w}"));
+    }
+    if switching {
+        lines.push(format!("Bitness: {} (via {source}) -> {}", choice.summary, choice.actual.display()));
+        cfg.proc_dump_path = choice.actual.display().to_string();
+    } else {
+        lines.push(format!("Bitness: {} (via {source})", choice.summary));
+    }
+    lines
 }
 
 fn run_procdump_cycle(
@@ -223,5 +290,180 @@ fn detect_and_notify(cfg: &Config, cycle_start: SystemTime, queue: &NotifyQueue,
                 Err(e) => logger::log("Monitor", &format!("Auto-collect skipped: {e}")),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitness::Bitness;
+
+    /// A ProcDump directory with real (empty) binaries, unique per call so the
+    /// fixtures cannot race under cargo's parallel test threads. Prefix differs
+    /// from bitness.rs's `pdm_bit_` — both fixtures live in the same test binary.
+    fn pd_dir(files: &[&str]) -> std::path::PathBuf {
+        use std::sync::atomic::AtomicU32;
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("pdm_mon_{n}"));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        for f in files {
+            std::fs::write(d.join(f), b"x").unwrap();
+        }
+        d
+    }
+
+    fn cfg_at(dir: &Path, binary: &str) -> Config {
+        let mut c = Config::default();
+        c.proc_dump_path = dir.join(binary).display().to_string();
+        c
+    }
+
+    fn unresolved(_: &Config) -> (Bitness, &'static str) { (Bitness::Unknown, "unresolved") }
+    fn x86(_: &Config) -> (Bitness, &'static str) { (Bitness::X86, "PE header") }
+    fn x64(_: &Config) -> (Bitness, &'static str) { (Bitness::X64, "PE header") }
+
+    #[test]
+    fn a_target_that_starts_later_self_corrects_to_the_32bit_binary() {
+        // THE BUG. Cycle 1 runs before the target exists: Unknown -> the 64-bit
+        // default. Cycle 2 resolves x86 and the binary must switch. A one-shot
+        // resolve at startup leaves procdump64.exe wired to a 32-bit target.
+        let d = pd_dir(&["procdump.exe", "procdump64.exe"]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        let l1 = bitness_step(&mut cached, &mut cfg, &d, true, unresolved);
+        assert_eq!(cached, Some(Bitness::Unknown));
+        assert_eq!(cfg.proc_dump_path, d.join("procdump64.exe").display().to_string());
+        // Exact, because `summary` itself contains an arrow — "no switch line"
+        // cannot be checked by looking for "->".
+        assert_eq!(l1, ["Bitness: Unknown bitness -> procdump64.exe (default) (via unresolved)"],
+            "first attempt must be visible and must not claim a switch");
+
+        let l2 = bitness_step(&mut cached, &mut cfg, &d, true, x86);
+        assert_eq!(cached, Some(Bitness::X86));
+        assert_eq!(cfg.proc_dump_path, d.join("procdump.exe").display().to_string(),
+            "32-bit target did not switch off procdump64.exe");
+        assert_eq!(l2, [format!("Bitness: 32-bit process -> procdump.exe (via PE header) -> {}",
+            d.join("procdump.exe").display())]);
+    }
+
+    #[test]
+    fn does_not_re_resolve_once_the_answer_is_known() {
+        // The cache. resolve() spawns reg.exe for Service targets, and the cycle
+        // delay can be zero — a call per cycle is a subprocess per cycle.
+        static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        fn counted(_: &Config) -> (Bitness, &'static str) {
+            CALLS.fetch_add(1, Ordering::Relaxed);
+            (Bitness::X64, "PE header")
+        }
+        let d = pd_dir(&["procdump.exe", "procdump64.exe"]);
+        let mut cfg = cfg_at(&d, "procdump.exe");
+        let mut cached = None;
+
+        for _ in 0..5 {
+            bitness_step(&mut cached, &mut cfg, &d, true, counted);
+        }
+        assert_eq!(CALLS.load(Ordering::Relaxed), 1, "re-resolved after the answer was known");
+    }
+
+    #[test]
+    fn keeps_retrying_while_unresolved() {
+        // The other half of the cache: Unknown is NOT a settled answer. Cache it
+        // as final and a target that starts later never corrects.
+        static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        fn counted(_: &Config) -> (Bitness, &'static str) {
+            CALLS.fetch_add(1, Ordering::Relaxed);
+            (Bitness::Unknown, "unresolved")
+        }
+        let d = pd_dir(&["procdump.exe", "procdump64.exe"]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        for _ in 0..5 {
+            bitness_step(&mut cached, &mut cfg, &d, true, counted);
+        }
+        assert_eq!(CALLS.load(Ordering::Relaxed), 5);
+    }
+
+    #[test]
+    fn logs_nothing_further_while_the_answer_stays_unknown() {
+        // Log flood guard: this path runs every cycle for the entire life of a
+        // monitor whose target never starts.
+        let d = pd_dir(&["procdump.exe", "procdump64.exe"]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        assert_eq!(bitness_step(&mut cached, &mut cfg, &d, true, unresolved).len(), 1);
+        for _ in 0..10 {
+            assert_eq!(bitness_step(&mut cached, &mut cfg, &d, true, unresolved), Vec::<String>::new(),
+                "repeated Unknown cycles must stay silent");
+        }
+    }
+
+    #[test]
+    fn an_unchanged_binary_is_not_logged_as_a_switch() {
+        // Decide on the CHOSEN BINARY PATH, not the source string: here the
+        // source changes (unresolved -> PE header) while the binary does not.
+        // Drop the path comparison and both cycles claim a switch that never
+        // happened. Lines are compared EXACTLY: `summary` contains its own
+        // arrow, so a substring check for "->" proves nothing.
+        let d = pd_dir(&["procdump.exe", "procdump64.exe"]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        let l1 = bitness_step(&mut cached, &mut cfg, &d, true, unresolved);
+        assert_eq!(l1, ["Bitness: Unknown bitness -> procdump64.exe (default) (via unresolved)"]);
+
+        let l2 = bitness_step(&mut cached, &mut cfg, &d, true, x64);
+        assert_eq!(cached, Some(Bitness::X64));
+        assert_eq!(l2, ["Bitness: 64-bit process -> procdump64.exe (via PE header)"],
+            "the Unknown -> known transition must be visible, and must not read as a switch");
+        assert_eq!(cfg.proc_dump_path, d.join("procdump64.exe").display().to_string());
+    }
+
+    #[test]
+    fn a_missing_binary_warns_once_not_every_cycle() {
+        // No ProcDump at all: select_binary hands back an empty path plus a
+        // warning, forever. The warning must reach the log (first attempt) and
+        // then stop.
+        let d = pd_dir(&[]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        let l1 = bitness_step(&mut cached, &mut cfg, &d, true, unresolved);
+        assert_eq!(l1.len(), 2, "{l1:?}");
+        assert!(l1[0].starts_with("Bitness WARNING: Neither"), "{l1:?}");
+        assert_eq!(bitness_step(&mut cached, &mut cfg, &d, true, unresolved), Vec::<String>::new());
+        // ...and an empty chosen path must never be written over a real one.
+        assert_eq!(cfg.proc_dump_path, d.join("procdump64.exe").display().to_string());
+    }
+
+    #[test]
+    fn a_fallback_for_a_32bit_target_warns_loudly() {
+        // 32-bit target, only procdump64.exe present: the dump will be useless,
+        // so the warning must reach the log alongside the decision.
+        let d = pd_dir(&["procdump64.exe"]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        let l = bitness_step(&mut cached, &mut cfg, &d, true, x86);
+        assert_eq!(l, [
+            "Bitness WARNING: procdump.exe not found - falling back to procdump64.exe.",
+            "Bitness: 32-bit process -> procdump64.exe (fallback) (via PE header)",
+        ]);
+    }
+
+    #[test]
+    fn a_32bit_os_pins_procdump_exe_regardless_of_target() {
+        // os64 is threaded through from bitness::os_is_64(); prove the parameter
+        // is actually consulted and not shadowed by a default.
+        let d = pd_dir(&["procdump.exe", "procdump64.exe"]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        let l = bitness_step(&mut cached, &mut cfg, &d, false, x64);
+        assert_eq!(cfg.proc_dump_path, d.join("procdump.exe").display().to_string(), "{l:?}");
     }
 }
