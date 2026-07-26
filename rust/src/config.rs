@@ -47,6 +47,10 @@ pub struct Config {
     pub config_version: i32,
     pub target_name: String,
     pub target_type: TargetType,
+    /// Full image path of the target, captured when picked from the dropdown
+    /// or resolved from a service's registry ImagePath. Lets bitness be read
+    /// from the PE on disk when the target is not running (the `-w` case).
+    pub target_path: String,
     pub proc_dump_path: String,
     pub dump_directory: String,
     pub dump_type: String,          // Full | MiniPlus | Mini | ThreadDump
@@ -106,6 +110,7 @@ impl Default for Config {
             config_version: CURRENT_VERSION,
             target_name: String::new(),
             target_type: TargetType::Process,
+            target_path: String::new(),
             proc_dump_path: String::new(),
             dump_directory: String::new(),
             dump_type: "Full".into(),
