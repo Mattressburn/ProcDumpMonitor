@@ -21,13 +21,25 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
-Add-Type -Namespace W -Name U32 -MemberDefinition @'
-[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-[DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, System.UIntPtr e);
-[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);
-[DllImport("user32.dll")] public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, System.IntPtr lParam, uint flags, uint timeoutMs, out System.UIntPtr result);
-[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int SendMessageW(System.IntPtr hWnd, uint Msg, int wParam, System.Text.StringBuilder lParam);
-[DllImport("user32.dll", EntryPoint="SendMessageW")] public static extern int SendMessageInt(System.IntPtr hWnd, uint Msg, int wParam, int lParam);
+Add-Type @'
+using System; using System.Runtime.InteropServices; using System.Text;
+namespace W {
+  [StructLayout(LayoutKind.Sequential)] public struct RC { public int L,T,R,B; }
+  [StructLayout(LayoutKind.Sequential)] public struct CBINFO {
+    public int cbSize; public RC rcItem; public RC rcButton; public int stateButton;
+    public IntPtr hwndCombo; public IntPtr hwndItem; public IntPtr hwndList; }
+  public static class U32 {
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, int d, UIntPtr e);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint flags, uint timeoutMs, out UIntPtr result);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int SendMessageW(IntPtr hWnd, uint Msg, int wParam, StringBuilder lParam);
+    [DllImport("user32.dll", EntryPoint="SendMessageW")] public static extern int SendMessageInt(IntPtr hWnd, uint Msg, int wParam, int lParam);
+    [DllImport("user32.dll")] public static extern bool GetComboBoxInfo(IntPtr h, ref CBINFO i);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RC r);
+    [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int idx);
+  }
+}
 '@
 
 $Exe = (Resolve-Path $Exe).Path
@@ -176,16 +188,29 @@ $first = $sb.ToString()
 Write-Host "probe: first entry = '$first'"
 if ($first -notlike 'Proc:*') { Fail "first target entry is not a process: '$first'" }
 
-# The dropdown LIST must be tall enough to show rows and scroll. A Win32
-# combobox uses its create-height for the dropped-down list, so a 26px combo
-# silently yields an unusable list. CB_SETTOPINDEX (0x015C) to a late row then
-# CB_GETTOPINDEX (0x015B) proves the list scrolls; a zero-height list can't.
-$target = [Math]::Min(40, $c0 - 1)
-[W.U32]::SendMessageInt($comboH, 0x015C, $target, 0) | Out-Null
-$top = [W.U32]::SendMessageInt($comboH, 0x015B, 0, 0)
-Write-Host "probe: dropdown scrolled to top index $top (asked $target)"
-if ($top -le 0) { Fail "target dropdown did not scroll (list height too small?)" }
-[W.U32]::SendMessageInt($comboH, 0x015C, 0, 0) | Out-Null
+# The dropdown must be SCROLLABLE BY THE USER. nwg omits WS_VSCROLL (its
+# ComboBoxFlags has no scroll bit), which leaves the drop-down list capped at
+# the ~30 rows Windows shows by default with no way to reach the rest.
+# NOTE: CB_SETTOPINDEX is NOT a valid test -- it repositions the list even when
+# there is no scrollbar and the wheel is dead (that false-green shipped once).
+# Drop the list, put the real cursor over it, and send real wheel input.
+[W.U32]::SendMessageInt($comboH, 0x014F, 1, 0) | Out-Null   # CB_SHOWDROPDOWN
+Start-Sleep -Milliseconds 500
+$cbi = New-Object W.CBINFO; $cbi.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($cbi)
+[W.U32]::GetComboBoxInfo($comboH, [ref]$cbi) | Out-Null
+$style = [W.U32]::GetWindowLong($cbi.hwndList, -16)
+if (-not ($style -band 0x00200000)) { Fail "target dropdown list has no WS_VSCROLL (unreachable items)" }
+$lb = New-Object W.RC; [W.U32]::GetWindowRect($cbi.hwndList, [ref]$lb) | Out-Null
+[W.U32]::SetCursorPos([int](($lb.L + $lb.R) / 2), [int](($lb.T + $lb.B) / 2)) | Out-Null
+Start-Sleep -Milliseconds 200
+$topBefore = [W.U32]::SendMessageInt($comboH, 0x015B, 0, 0)   # CB_GETTOPINDEX
+for ($w = 0; $w -lt 5; $w++) { [W.U32]::mouse_event(0x0800, 0, 0, -360, [UIntPtr]::Zero); Start-Sleep -Milliseconds 120 }
+Start-Sleep -Milliseconds 250
+$topAfter = [W.U32]::SendMessageInt($comboH, 0x015B, 0, 0)
+Write-Host "probe: real mouse wheel scrolled dropdown $topBefore -> $topAfter"
+if ($topAfter -le $topBefore) { Fail "mouse wheel did not scroll the target dropdown" }
+[W.U32]::SendMessageInt($comboH, 0x014F, 0, 0) | Out-Null    # close the list
+Start-Sleep -Milliseconds 200
 
 # "Include stopped services" must ADD entries. Adjudicated by count, not pixels.
 $showall = Require (Find-El 'BUTTON' '*stopped services*') "show-all checkbox"

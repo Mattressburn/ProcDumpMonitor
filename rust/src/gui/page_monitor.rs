@@ -131,13 +131,39 @@ fn mk_check<P: Into<nwg::ControlHandle> + Copy>(
     c
 }
 
+/// A ComboBox whose dropdown list actually has a scrollbar.
+///
+/// nwg never passes `WS_VSCROLL`: `ComboBoxFlags` exposes only
+/// VISIBLE/DISABLED/TAB_STOP and `forced_flags()` is just
+/// `CBS_DROPDOWNLIST | WS_CHILD | WS_BORDER`. Win32 requires WS_VSCROLL **at
+/// creation** for a combobox's drop-down list to get a vertical scrollbar, so
+/// every stock nwg combo silently caps at the ~30 rows Windows shows by
+/// default (CB_GETMINVISIBLE) with no way to reach the rest — verified: no
+/// WS_VSCROLL on the internal listbox and real mouse-wheel input left
+/// CB_GETTOPINDEX pinned at 0. `from_bits_unchecked` (bitflags 1.3) is the
+/// only way to add the bit through nwg's typed builder. Windows draws the bar
+/// only when items overflow, so short combos are unaffected.
 fn mk_combo<P: Into<nwg::ControlHandle> + Copy>(
     parent: P,
     pos: (i32, i32),
     size: (i32, i32),
 ) -> nwg::ComboBox<String> {
+    const WS_VSCROLL: u32 = 0x0020_0000;
+    let flags = unsafe {
+        nwg::ComboBoxFlags::from_bits_unchecked(
+            nwg::ComboBoxFlags::VISIBLE.bits()
+                | nwg::ComboBoxFlags::TAB_STOP.bits()
+                | WS_VSCROLL,
+        )
+    };
     let mut c = nwg::ComboBox::default();
-    nwg::ComboBox::builder().position(pos).size(size).parent(parent).build(&mut c).unwrap();
+    nwg::ComboBox::builder()
+        .flags(flags)
+        .position(pos)
+        .size(size)
+        .parent(parent)
+        .build(&mut c)
+        .unwrap();
     c
 }
 
@@ -177,12 +203,12 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage
     captions.push(mk_header(parent, "Target", 12, &header_font));
 
     captions.push(mk_label(parent, "Process or service:", (PAD, 38), (190, 20)));
-    // HEIGHT IS THE DROPDOWN HEIGHT: Win32 uses a combobox's CreateWindowEx
-    // height for the control *with its list dropped down* (the closed control
-    // is always drawn one item tall). nwg passes `size` straight through, so
-    // the design-system 26 gave a list with no usable rows -- it looked like
-    // "scrolling is broken". 300 logical px shows ~11 rows, then scrolls.
-    let cmb_target = mk_combo(parent, (FIELD_X, 40), (308, 300));
+    // Height stays on the design-system field height: measured, the create
+    // height does NOT control this dropdown's list height (Windows sizes it to
+    // CB_GETMINVISIBLE = 30 rows either way -- 26 and 300 both gave a 572px
+    // list). Reaching the rest of the items is `mk_combo`'s WS_VSCROLL, not
+    // this number.
+    let cmb_target = mk_combo(parent, (FIELD_X, 40), (308, FIELD_H));
     let btn_refresh = mk_button(parent, "Refresh", (548, 38), (100, 30));
     let chk_show_all = mk_check(parent, "Include stopped services", (FIELD_X, 74), (330, 22));
 
