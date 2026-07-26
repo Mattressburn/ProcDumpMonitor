@@ -1,8 +1,22 @@
 # Bitness Correctness + UI Polish — Design
 
 **Date:** 2026-07-26
-**Status:** Approved for planning
+**Status:** Phase 1 approved for planning. Phases 2-3 specified but NOT yet
+scoped into a plan.
 **Supersedes nothing.** Extends `2026-07-25-log-collector-design.md`.
+
+## Scope split (read first)
+
+This document specifies three phases. **They are not one implementation plan.**
+
+| Phase | Content | Unit |
+|---|---|---|
+| **1. Bitness** | PE-header resolution, wiring, `TargetPath` config field, tests | Correctness fix. Self-contained, own tests, own verification. **Goes to planning now.** |
+| **2. Defects** | Footer clamp, picker filter + empty state, duplicate service names, warning placement, numeric labels, status colors | Touches layout on the Monitor page + shell. Separate plan. |
+| **3. Visual pass** | shadcn-locked typography, borders, status semantics across five pages | Separate plan; depends on phase 2 landing first. |
+
+Phase 1 ships independently and is worth shipping alone: it is the difference
+between a usable and an unusable dump for the 32-bit Software House clients.
 
 ## Problem
 
@@ -111,15 +125,27 @@ shells it via `super::run_tool`), so this adds no new Win32 API surface.
 
 **Wiring:**
 
-- `monitor.rs`: remove the one-shot selection at line 42. Re-resolve per cycle
-  inside/ahead of `run_procdump_cycle`, so a target that starts later
-  self-corrects. **Log only when the resolved choice changes** — a per-cycle log
-  line would flood `procdump.log`.
+- `monitor.rs`: remove the one-shot selection at line 42. Re-resolve ahead of
+  `run_procdump_cycle` so a target that starts later self-corrects — but
+  **cache the result and only re-resolve while the previous answer was
+  `Unknown`**. Resolution can spawn `reg.exe`, and the cycle delay
+  (`restart_delay_seconds * 10` x 100ms) can be short; re-resolving
+  unconditionally would spawn a process every cycle. Any `reg.exe` spawn from
+  the monitor must set `CREATE_NO_WINDOW` (the `services.rs` / `task.rs`
+  pattern) or a server console gets a visible flash each time.
+- Decide whether to log a change by comparing the **chosen binary path**, not
+  the source string — the source can differ while the selected binary does not.
 - `page_monitor.rs:485`: call the same `resolve()` so the GUI preview cannot
   disagree with what the monitor will actually do. Fix its hardcoded
   `os_is_64: true`.
 - `page_monitor.rs`: capture the full image path when a process is picked from
-  the dropdown, into the new config field.
+  the dropdown, into the new config field. Note `list_process_names()` dedupes
+  by name and returns names only, so this means resolving at pick time
+  (`QueryFullProcessImageName` on a PID found by name). **If two running
+  processes share an exe name, whichever Toolhelp returns first wins.** That is
+  acceptable — same-named processes are overwhelmingly the same image — but it
+  is a real ambiguity and the PE result should be treated as advisory when the
+  runtime probe disagrees.
 - `config.rs`: add `target_path: String` with `#[serde(default)]` (PascalCase
   `TargetPath` on the wire) so existing `config.json` files still load.
 
@@ -131,9 +157,24 @@ block Create Task; pre-arming a not-yet-installed target is legitimate.
 
 **Tests (no fixtures, no frameworks):**
 
-- `pe_machine` against `C:\Windows\SysWOW64\notepad.exe` (x86) and
-  `C:\Windows\System32\notepad.exe` (x64) — real PEs, present on every x64
-  Windows.
+- x64 PE: `std::env::current_exe()` — the test binary itself. Guaranteed
+  present, no system-path assumption.
+- x86 PE: `C:\Windows\SysWOW64\cmd.exe`. **Skip with a message if absent**
+  rather than fail — WOW64 contents vary on ARM64 hosts. Chosen over
+  `notepad.exe` because notepad is progressively being replaced by the Store
+  package and may be a stub or absent on some Windows 11 installs.
+- Both paths were verified on the dev machine, and the parse algorithm was
+  validated against them before this spec was written:
+
+  | Path | sig | machine | |
+  |---|---|---|---|
+  | `System32\cmd.exe` | `0x4550` | `0x8664` | X64 |
+  | `SysWOW64\cmd.exe` | `0x4550` | `0x014C` | X86 |
+  | our own debug exe | `0x4550` | `0x8664` | X64 |
+
+- Do **not** assert anything stronger than the `Bitness` mapping: an ARM64 PE
+  (`0xAA64`) and an AMD64 PE both map to `X64`. That is correct for choosing a
+  ProcDump binary, but the two are indistinguishable in the returned value.
 - Pure-string tests for ImagePath parsing: quoted path, unquoted path with
   arguments, `\??\` prefix, embedded environment variables, svchost detection.
 - Existing 6 `select_binary` tests must keep passing untouched.
