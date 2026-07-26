@@ -25,6 +25,13 @@ C:\Tools\LogDump\
     └── procdump.log          ← auto-created by monitor mode
 ```
 
+> **Upgrading from a ProcDumpMonitor install:** drop `LogDump.exe` into the
+> existing folder beside the current `config.json` — do not create a new folder.
+> All settings live next to the EXE, and the saved SMTP password and webhook URL
+> are encrypted against this machine with no way to migrate them by hand. An
+> already-registered Scheduled Task keeps its old name and keeps working; the app
+> reads the name from `config.json` rather than recomputing it.
+
 ---
 
 ## Requirements

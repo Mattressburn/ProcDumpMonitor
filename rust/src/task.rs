@@ -236,6 +236,9 @@ mod tests {
         // Anything the user actually typed must NOT be treated as a default.
         assert!(!is_default_task_name("LogDump MyApp"));
         assert!(!is_default_task_name("My Watcher"));
+        // NOT a statement that empty means "user-typed": both call sites treat an
+        // empty box as a default via their own `|| typed_task.is_empty()` clause.
+        // This only pins the helper itself to a pure two-literal match.
         assert!(!is_default_task_name(""));
     }
 
