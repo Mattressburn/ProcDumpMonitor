@@ -190,6 +190,48 @@ fn parse_i32(t: &nwg::TextInput) -> i32 {
     t.text().trim().parse::<i32>().unwrap_or(0)
 }
 
+/// Render the bitness label from an already-made decision. PURE: no env, no
+/// filesystem, no registry — split from `bitness_text` so the 32-bit-OS branch
+/// (the half of the old bug that hardcoded `os_is_64: true`) is testable on a
+/// 64-bit host by handing `select_binary` a `false`, instead of mutating
+/// PROCESSOR_ARCHITECTURE under parallel test threads.
+///
+/// The `Unknown` arm must keep `choice.summary` intact: it is the only place
+/// the word "Unknown" appears, and a svchost-hosted 32-bit service genuinely
+/// cannot be resolved from a PE. Shortening this to the binary name would read
+/// as a verified 64-bit answer.
+fn bitness_label(b: bitness::Bitness, source: &str, choice: &bitness::BinaryChoice) -> String {
+    match (&choice.warning, b) {
+        (Some(w), _) => format!("{} - {w}", choice.summary),
+        (None, bitness::Bitness::Unknown) => format!(
+            "{} - could not determine target bitness; verify manually.",
+            choice.summary
+        ),
+        (None, _) => format!("{} (via {source})", choice.summary),
+    }
+}
+
+/// The label text for `cfg` — the monitor's own `resolve` + `os_is_64`, so the
+/// preview cannot disagree with what the scheduled task will do.
+///
+/// The empty-target guard sits BEFORE `resolve` on purpose: with an empty name
+/// and `TargetType::Service`, `resolve` would spawn `reg.exe` against the bare
+/// `...\Services` key. Callers are `load()` (startup + every sidebar switch
+/// onto Monitor) and `on_target_picked()` — user-paced. Do NOT call this from
+/// `refresh_status` (3s timer) or `write_fields` (per keystroke): for a Service
+/// target `resolve` costs one `reg.exe` spawn.
+fn bitness_text(cfg: &Config, procdump_path: &str) -> String {
+    if cfg.target_name.trim().is_empty() {
+        return String::new();
+    }
+    let pd_dir = std::path::Path::new(procdump_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(paths::install_dir);
+    let (b, source) = bitness::resolve(cfg);
+    bitness_label(b, source, &bitness::select_binary(b, &pd_dir, bitness::os_is_64()))
+}
+
 pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage {
     let header_font = theme::semibold(15);
     let mut captions: Vec<nwg::Label> = Vec::new();
@@ -422,7 +464,13 @@ impl MonitorPage {
         {
             self.txt_task_name.set_text(&task::auto_task_name(&name));
         }
-        self.update_bitness(&name, &self.txt_procdump_path.text());
+        // update_bitness needs a &Config. Build it with the CONTROL-PURE
+        // write_fields on a throwaway clone -- never save(), which would
+        // DPAPI-encrypt the typed webhook URL into the discarded clone and
+        // clear the live field, destroying the user's URL.
+        let mut probe = state.cfg.borrow().clone();
+        self.write_fields(&mut probe);
+        self.update_bitness(&probe, &self.txt_procdump_path.text());
         self.refresh_preview(state);
     }
 
@@ -477,17 +525,10 @@ impl MonitorPage {
         self.txt_effective.set_text(&crate::procdump::build_args(&cfg));
     }
 
-    fn update_bitness(&self, target: &str, procdump_path: &str) {
-        let pd_dir = std::path::Path::new(procdump_path)
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(paths::install_dir);
-        let choice = bitness::select_binary(bitness::detect(target), &pd_dir, true);
-        let text = match &choice.warning {
-            Some(w) => format!("{} - {w}", choice.summary),
-            None => choice.summary.clone(),
-        };
-        self.lbl_bitness.set_text(&text);
+    /// Shows the bitness the MONITOR will resolve, using the same code path,
+    /// so the preview cannot disagree with runtime behaviour.
+    fn update_bitness(&self, cfg: &Config, procdump_path: &str) {
+        self.lbl_bitness.set_text(&bitness_text(cfg, procdump_path));
     }
 
     pub fn browse_procdump_path(&self, parent: nwg::ControlHandle) {
@@ -581,7 +622,7 @@ impl MonitorPage {
         self.txt_webhook.set_enabled(cfg.webhook_enabled);
         set_checked(&self.chk_autocollect, cfg.auto_collect_on_dump);
 
-        self.update_bitness(&cfg.target_name, &cfg.proc_dump_path);
+        self.update_bitness(cfg, &cfg.proc_dump_path);
         self.suppress_custom.set(prev);
     }
 
@@ -889,5 +930,166 @@ impl MonitorPage {
                 None => self.lbl_st_alert.set_text(""),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A throwaway ProcDump directory. Same counter trick as bitness.rs's copy:
+    /// cargo runs tests in parallel and several of these share a file list.
+    fn dir_with(files: &[&str]) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("pdm_lbl_{n}"));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        for f in files {
+            std::fs::write(d.join(f), b"x").unwrap();
+        }
+        d
+    }
+
+    /// Path handed to `bitness_text` — it takes the ProcDump EXE path and uses
+    /// the parent, which is what the txt_procdump_path box holds.
+    fn pd_exe(d: &std::path::Path) -> String {
+        d.join("procdump64.exe").to_string_lossy().to_string()
+    }
+
+    fn my_process_name() -> String {
+        std::env::current_exe().unwrap().file_name().unwrap().to_string_lossy().to_string()
+    }
+
+    // ---- bitness_label: pure, exact strings -------------------------------
+    //
+    // Every assertion below is on the FULL rendered string, not `contains`.
+    // A contains-only test cannot fail here: drop the Unknown arm entirely and
+    // the fall-through still emits a string containing "Unknown".
+
+    #[test]
+    fn label_names_the_source_when_resolved() {
+        let d = dir_with(&["procdump.exe", "procdump64.exe"]);
+        let c = bitness::select_binary(bitness::Bitness::X86, &d, true);
+        assert_eq!(
+            bitness_label(bitness::Bitness::X86, "PE header", &c),
+            "32-bit process -> procdump.exe (via PE header)"
+        );
+    }
+
+    #[test]
+    fn label_keeps_the_word_unknown_when_unresolved() {
+        // The requirement verbatim, in BOTH directory shapes select_binary can
+        // hit for Unknown. A svchost-hosted 32-bit service cannot be resolved
+        // from a PE, and the label must not read as a verified 64-bit answer.
+        let both = dir_with(&["procdump.exe", "procdump64.exe"]);
+        let c = bitness::select_binary(bitness::Bitness::Unknown, &both, true);
+        let t = bitness_label(bitness::Bitness::Unknown, "unresolved", &c);
+        assert_eq!(
+            t,
+            "Unknown bitness -> procdump64.exe (default) \
+             - could not determine target bitness; verify manually."
+        );
+        assert!(t.contains("Unknown"), "the word Unknown must survive: {t}");
+
+        // Only the 32-bit binary present: Unknown AND a warning. The warning
+        // arm wins, so this is the second place "Unknown" has to survive.
+        let only32 = dir_with(&["procdump.exe"]);
+        let c = bitness::select_binary(bitness::Bitness::Unknown, &only32, true);
+        let t = bitness_label(bitness::Bitness::Unknown, "unresolved", &c);
+        assert_eq!(
+            t,
+            "Unknown bitness -> procdump.exe \
+             - procdump64.exe not found; using procdump.exe as fallback."
+        );
+        assert!(t.contains("Unknown"), "the word Unknown must survive: {t}");
+    }
+
+    #[test]
+    fn label_shows_a_select_binary_warning() {
+        let d = dir_with(&["procdump64.exe"]);
+        let c = bitness::select_binary(bitness::Bitness::X86, &d, true);
+        assert_eq!(
+            bitness_label(bitness::Bitness::X86, "PE header", &c),
+            "32-bit process -> procdump64.exe (fallback) \
+             - procdump.exe not found - falling back to procdump64.exe."
+        );
+    }
+
+    #[test]
+    fn label_reports_a_32bit_os() {
+        // The half of the old bug that hardcoded `os_is_64: true`: on a 32-bit
+        // OS the label claimed procdump64.exe would be used. This host is x64,
+        // so os_is_64 is injected here rather than mutating the environment --
+        // which is exactly why bitness_label is split out of bitness_text.
+        let d = dir_with(&["procdump.exe", "procdump64.exe"]);
+        let c = bitness::select_binary(bitness::Bitness::X64, &d, false);
+        assert_eq!(
+            bitness_label(bitness::Bitness::X64, "PE header", &c),
+            "32-bit OS -> procdump.exe (via PE header)"
+        );
+    }
+
+    // ---- bitness_text: the wiring update_bitness uses ---------------------
+
+    #[test]
+    fn text_is_empty_for_an_empty_target() {
+        let d = dir_with(&["procdump.exe", "procdump64.exe"]);
+        assert_eq!(bitness_text(&Config::default(), &pd_exe(&d)), "");
+
+        // Service type too: this is the guard that keeps an empty name from
+        // spawning reg.exe against the bare ...\Services key. The empty return
+        // is the observable half; the absent spawn is inspection-only.
+        let mut c = Config::default();
+        c.target_type = TargetType::Service;
+        c.target_name = "   ".into();
+        assert_eq!(bitness_text(&c, &pd_exe(&d)), "");
+    }
+
+    #[test]
+    fn text_resolves_a_running_process_from_its_pe() {
+        // Also kills a `bitness::resolve` -> `bitness::detect` regression: the
+        // runtime path would render "(via running process)".
+        let d = dir_with(&["procdump.exe", "procdump64.exe"]);
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = my_process_name();
+        assert_eq!(
+            bitness_text(&c, &pd_exe(&d)),
+            "64-bit process -> procdump64.exe (via PE header)"
+        );
+    }
+
+    #[test]
+    fn text_resolves_a_service_target() {
+        // THE defect this task fixes: `detect` takes a process name, so it
+        // returned Unknown for every service. Spooler is a standalone exe
+        // (not svchost-hosted), so the PE path must answer.
+        if bitness::service_image_path("Spooler").is_none() {
+            eprintln!("skipping: Spooler not present on this host");
+            return;
+        }
+        let d = dir_with(&["procdump.exe", "procdump64.exe"]);
+        let mut c = Config::default();
+        c.target_type = TargetType::Service;
+        c.target_name = "Spooler".into();
+        assert_eq!(
+            bitness_text(&c, &pd_exe(&d)),
+            "64-bit process -> procdump64.exe (via PE header)"
+        );
+    }
+
+    #[test]
+    fn text_is_unresolved_for_a_target_that_cannot_be_found() {
+        let d = dir_with(&["procdump.exe", "procdump64.exe"]);
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = "PdmDefinitelyNotRunning.exe".into();
+        assert_eq!(
+            bitness_text(&c, &pd_exe(&d)),
+            "Unknown bitness -> procdump64.exe (default) \
+             - could not determine target bitness; verify manually."
+        );
     }
 }
