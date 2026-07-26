@@ -895,10 +895,15 @@ mod tests {
                 Bitness::X86,
                 "prefer-32 as really shipped",
             ),
-            // ILONLY clear (mixed mode) with neither pin: still X64. Pins the
-            // documented decision NOT to gate on ILONLY, so a later "hardening"
-            // that adds the term goes red instead of silently re-breaking C1.
-            (0, Bitness::X64, "no ILONLY, no pin"),
+            // ILONLY clear with neither pin. This row asserts THE CURRENT
+            // PREDICATE, not OS semantics: a managed PE32 without ILONLY holds
+            // native code and would really run 32-bit, so X64 is only "right"
+            // in the sense that we deliberately do not gate on ILONLY (see
+            // bitness_from_pe). The shape does not ship — mixed-mode images get
+            // 32BITREQUIRED from the linker (row 2). Kept so the no-ILONLY-gate
+            // decision is mechanically pinned; if you ever DO gate on it,
+            // change this row rather than assuming the test found a bug.
+            (0, Bitness::X64, "no ILONLY, no pin (predicate, not OS semantics)"),
         ] {
             let p = tmp_pe("flags", &synth_pe(0x014C, 0x10B, 16, 0x1000, flags));
             let got = bitness_from_pe(&p);
@@ -1439,11 +1444,16 @@ mod tests {
         // short-circuits on an empty target BEFORE resolve, precisely so an
         // empty name cannot spawn reg.exe. The GUI never reaches this input.
         //
-        // It still has a real production caller, just a different one: cli.rs's
-        // `monitor` verb does no target validation, Config::load falls back to
-        // Config::default() on a missing or unparseable file, and monitor.rs's
-        // bitness_step has no empty-name guard — so a misconfigured install
-        // runs resolve(&Config::default()) once per monitor cycle, forever.
+        // CORRECTED AGAIN (final review, I3): the monitor no longer reaches
+        // this input either. cli.rs's `monitor` verb still does no target
+        // validation and Config::load still falls back to Config::default() on
+        // a missing or unparseable file — but monitor::run now rejects an empty
+        // target_name and exits BEFORE the loop, so the "resolve(&default())
+        // once per cycle, forever" path this comment used to describe is gone.
+        //
+        // The assertion is therefore a pure-function guard now, not a
+        // production-path one: it pins what `resolve` itself does with an empty
+        // name, so a future caller that reaches it cannot be surprised.
         //
         // What the assertion pins: running_process_path guards on is_empty;
         // detect() does not, and matches on `"" == ""`. Nothing else stops an

@@ -232,10 +232,12 @@ fn bitness_label(b: bitness::Bitness, source: &str, choice: &bitness::BinaryChoi
 ///
 /// The empty-target guard sits BEFORE `resolve` on purpose: with an empty name
 /// and `TargetType::Service`, `resolve` would spawn `reg.exe` against the bare
-/// `...\Services` key. Callers are `load()` (startup + every sidebar switch
-/// onto Monitor), `on_target_picked()` and `on_advanced_changed()` — all
-/// user-paced. Do NOT call this from `refresh_status` (3s timer) or
-/// `write_fields` (per keystroke): for a Service target `resolve` costs one
+/// `...\Services` key. Every caller reaches it through `update_bitness`:
+/// `load()` (startup + every sidebar switch onto Monitor), `on_target_picked()`,
+/// `on_advanced_changed()`, and `refresh_targets()` (build + the Refresh /
+/// "include stopped services" handler) — all user-paced. THIS LIST IS THE
+/// GUARD; keep it complete. Do NOT call this from `refresh_status` (3s timer)
+/// or `write_fields` (per keystroke): for a Service target `resolve` costs one
 /// `reg.exe` spawn.
 fn bitness_text(cfg: &Config) -> String {
     if cfg.target_name.trim().is_empty() {
