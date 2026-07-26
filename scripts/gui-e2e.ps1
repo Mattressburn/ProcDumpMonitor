@@ -9,6 +9,10 @@
 # Run under Windows PowerShell 5.1 (powershell.exe) for UIA assemblies. The
 # machine's mouse/keyboard must be idle during the run.
 #
+# DESTRUCTIVE: deletes config.json BESIDE THE EXE before launching (the
+# TargetPath assertion needs a known-empty starting config - see below) and
+# writes a fresh one via the Save Config button.
+#
 #   powershell -File scripts\gui-e2e.ps1 -Exe rust\target\debug\ProcDumpMonitor.exe -OutDir out\shots
 #
 # Exit codes: 0 = full walk completed, 1 = element/window not found or nav broken.
@@ -25,6 +29,7 @@ Add-Type @'
 using System; using System.Runtime.InteropServices; using System.Text;
 namespace W {
   [StructLayout(LayoutKind.Sequential)] public struct RC { public int L,T,R,B; }
+  [StructLayout(LayoutKind.Sequential)] public struct PT { public int X,Y; }
   [StructLayout(LayoutKind.Sequential)] public struct CBINFO {
     public int cbSize; public RC rcItem; public RC rcButton; public int stateButton;
     public IntPtr hwndCombo; public IntPtr hwndItem; public IntPtr hwndList; }
@@ -32,12 +37,17 @@ namespace W {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, int d, UIntPtr e);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(ref PT p);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(PT p);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, EntryPoint="SendMessageW")] public static extern int SendMessageStr(IntPtr hWnd, uint Msg, int wParam, string lParam);
     [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint flags, uint timeoutMs, out UIntPtr result);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int SendMessageW(IntPtr hWnd, uint Msg, int wParam, StringBuilder lParam);
     [DllImport("user32.dll", EntryPoint="SendMessageW")] public static extern int SendMessageInt(IntPtr hWnd, uint Msg, int wParam, int lParam);
     [DllImport("user32.dll")] public static extern bool GetComboBoxInfo(IntPtr h, ref CBINFO i);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RC r);
     [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int idx);
+    [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr h, out int pid);
   }
 }
 '@
@@ -51,6 +61,42 @@ Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($Exe)) -ErrorAction Si
     Where-Object { $_.Path -eq $Exe } | Stop-Process -Force -ErrorAction SilentlyContinue
 
 function Fail([string]$msg) { Write-Host "FAIL: $msg"; try { if ($script:proc -and !$script:proc.HasExited) { $script:proc.Kill() } } catch {}; exit 1 }
+
+# PRECONDITION: an unlocked, interactive desktop. This is the single biggest
+# source of untrustworthy results. Injected input goes to whoever owns the
+# input desktop; on a LOCKED workstation that is LockApp, so every click is
+# silently swallowed - while UIA still enumerates the controls and window
+# messages still answer, so the run LOOKS like it is working and fails
+# somewhere arbitrary. Measured on 2026-07-26: locked, GetForegroundWindow()
+# returned 0 and a synthesized click landed on 'Windows Default Lock Screen'.
+# A locked session is the most likely explanation for the historical "0 -> 0"
+# scroll false-RED and for the one lost SMTP click. One second to rule out.
+function Assert-Interactive {
+    for ($t = 0; $t -lt 8; $t++) {
+        $h = [W.U32]::GetForegroundWindow()
+        if ($h -ne [IntPtr]::Zero) {
+            $fgPid = 0
+            [W.U32]::GetWindowThreadProcessId($h, [ref]$fgPid) | Out-Null
+            $n = try { (Get-Process -Id $fgPid -ErrorAction Stop).ProcessName } catch { '' }
+            if ($n -and $n -notin @('LockApp', 'LogonUI')) { Write-Host "desktop: interactive (foreground = $n)"; return }
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    Fail "workstation appears LOCKED (no foreground window, or LockApp/LogonUI owns it). Synthesized clicks would go to the lock screen, not the app. Unlock the session, leave the mouse and keyboard idle, and re-run."
+}
+Assert-Interactive
+
+# The TargetPath assertion at the end of the walk needs a KNOWN-EMPTY starting
+# config, and this MUST happen before Start-Process: gui/mod.rs reads
+# config.json into memory once, at launch, so deleting it mid-walk leaves the
+# in-memory copy (and a stale-but-correct TargetPath) intact and the assertion
+# passes even with the feature broken. With no file, Config::load returns
+# Default -> TargetName empty -> set_target() sees a real change and CLEARS
+# TargetPath, so only capture_target_path() can put it back.
+# config.json lives beside the EXE (paths::install_dir), never in OutDir.
+$cfgPath = Join-Path (Split-Path $Exe) 'config.json'
+Remove-Item $cfgPath -Force -ErrorAction SilentlyContinue
+Write-Host "reset:  removed $cfgPath"
 
 Write-Host "launch: $Exe"
 $script:proc = Start-Process -FilePath $Exe -PassThru
@@ -156,17 +202,52 @@ function Shot([string]$name, [object]$target = $win) {
 }
 # Find an owned dialog window (Advanced / SMTP) by title. Owned windows nest
 # UNDER their owner in the UIA tree, so search descendants, not root children.
-function Find-Dialog([string]$title) {
+# IsOffscreen filter: both dialogs are OWNED and REUSABLE - nwg HIDES them on
+# close instead of destroying them - so a hidden one that is still in the UIA
+# tree would otherwise be handed back as though it had opened.
+function Find-Dialog([string]$title, [int]$tries = 40) {
     $pidCond = New-Object System.Windows.Automation.PropertyCondition($auto::ProcessIdProperty, $proc.Id)
     $winCond = New-Object System.Windows.Automation.PropertyCondition($auto::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
     $and = New-Object System.Windows.Automation.AndCondition($pidCond, $winCond)
-    for ($t = 0; $t -lt 20; $t++) {
+    $seen = @()
+    for ($t = 0; $t -lt $tries; $t++) {
+        $seen = @()
         foreach ($w in $auto::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, $and)) {
-            if ($w.Current.Name -eq $title) { return $w }
+            $off = ''; if ($w.Current.IsOffscreen) { $off = ' [offscreen]' }
+            $seen += "'$($w.Current.Name)'$off"
+            if ($w.Current.Name -eq $title -and -not $w.Current.IsOffscreen) { return $w }
         }
         Start-Sleep -Milliseconds 150
     }
+    # Leave evidence: the SMTP step failed here once with no way to tell whether
+    # the click was lost or the dialog opened under a different title.
+    Write-Host "probe: dialog '$title' not found; process windows seen: $($seen -join ', ')"
     return $null
+}
+# Click a button that opens an owned dialog, then wait for the dialog.
+# The single re-click papers over a LOST FIRST CLICK - nothing else. It does
+# not cover a dialog that fails to build (the second attempt would miss too).
+# See the Task 8 report: the SMTP step failed once on 2026-07-26 and was green
+# on an immediate re-run; the cause was never reproduced. Every retry is
+# printed, so a run that needed one is visible in the transcript.
+function Open-Dialog([object]$btn, [string]$title) {
+    Click-El $btn; Start-Sleep -Milliseconds 500
+    $d = Find-Dialog $title
+    if (-not $d) {
+        Write-Host "retry: '$title' did not appear after the first click - clicking once more"
+        Click-El $btn; Start-Sleep -Milliseconds 500
+        $d = Find-Dialog $title
+    }
+    return $d
+}
+# A fixed sleep after Save & Close let the NEXT click land while the dialog was
+# still up (a modal dialog covers the footer buttons). Wait for it to actually go.
+function Wait-DialogGone([object]$dlg, [string]$title) {
+    for ($t = 0; $t -lt 40; $t++) {
+        try { if ($dlg.Current.IsOffscreen) { return } } catch { return }  # destroyed = gone
+        Start-Sleep -Milliseconds 100
+    }
+    Fail "dialog '$title' still on screen 4s after Save & Close"
 }
 
 # =====================  Monitor page  =====================
@@ -178,15 +259,27 @@ $combo = Require (Top-Combo) "target combo"
 $comboH = [IntPtr]$combo.Current.NativeWindowHandle
 $c0 = Combo-Count $combo
 Write-Host "probe: target combo has $c0 entries (hint row + processes + running services)"
-if ($c0 -lt 1) { Fail "target combo empty (expected processes and services)" }
+# 2, not 1: the hint row is UNCONDITIONAL since Task 7, so "-lt 1" could never
+# fire. A list holding nothing but the hint row is an empty list.
+if ($c0 -lt 2) { Fail "target combo holds only the hint row ($c0 entries; expected processes and services)" }
 
-# PROCESSES MUST COME FIRST (they'd be unreachable under 150+ services).
-# CB_GETLBTEXT = 0x0148.
+# CB_GETLBTEXT = 0x0148. Index 0 is the hint row.
 $sb = New-Object System.Text.StringBuilder 512
 [W.U32]::SendMessageW($comboH, 0x0148, 0, $sb) | Out-Null
 $first = $sb.ToString()
 Write-Host "probe: first entry = '$first'"
 if ($first -ne '- Select a process or service -') { Fail "first target entry is not the hint row: '$first'" }
+
+# PROCESSES MUST COME FIRST (they'd be unreachable under 150+ services). Since
+# Task 7 index 0 is the hint, so the ordering check reads index 1 - the first
+# REAL entry. A FRESH StringBuilder: CB_GETLBTEXT returns CB_ERR (-1) on an
+# out-of-range index and leaves the buffer untouched, so a reused $sb would
+# read back the hint text and pass.
+$sb1 = New-Object System.Text.StringBuilder 512
+if ([W.U32]::SendMessageW($comboH, 0x0148, 1, $sb1) -lt 0) { Fail "target combo has no entry at index 1" }
+$second = $sb1.ToString()
+Write-Host "probe: second entry = '$second'"
+if ($second -notlike 'Proc: *') { Fail "index 1 is not a process ('$second') - services must not precede processes" }
 
 # The dropdown must be SCROLLABLE BY THE USER. nwg omits WS_VSCROLL (its
 # ComboBoxFlags has no scroll bit), which leaves the drop-down list capped at
@@ -194,6 +287,18 @@ if ($first -ne '- Select a process or service -') { Fail "first target entry is 
 # NOTE: CB_SETTOPINDEX is NOT a valid test -- it repositions the list even when
 # there is no scrollbar and the wheel is dead (that false-green shipped once).
 # Drop the list, put the real cursor over it, and send real wheel input.
+#
+# mouse_event's wheel goes to the FOREGROUND window, and SetForegroundWindow is
+# REFUSED to a caller that does not own the foreground - so a lost activation
+# looks exactly like a dead scroll (that false RED happened on 2026-07-26:
+# "0 -> 0" on a correct build, "0 -> 45" on an identical re-run). Check it
+# HERE, before the list drops, where the answer is unambiguous, and fail with a
+# HARNESS message so a broken harness never reads as a product bug.
+[W.U32]::SetForegroundWindow($script:hwnd) | Out-Null
+Start-Sleep -Milliseconds 250
+$fg = [W.U32]::GetForegroundWindow()
+Write-Host "probe: foreground=$fg app=$($script:hwnd)"
+if ($fg -ne $script:hwnd) { Fail "HARNESS: could not foreground the app window (fg=$fg app=$($script:hwnd)) - the wheel would go elsewhere, so a scroll result here is not trustworthy" }
 [W.U32]::SendMessageInt($comboH, 0x014F, 1, 0) | Out-Null   # CB_SHOWDROPDOWN
 Start-Sleep -Milliseconds 500
 $cbi = New-Object W.CBINFO; $cbi.cbSize = [System.Runtime.InteropServices.Marshal]::SizeOf($cbi)
@@ -203,6 +308,10 @@ if (-not ($style -band 0x00200000)) { Fail "target dropdown list has no WS_VSCRO
 $lb = New-Object W.RC; [W.U32]::GetWindowRect($cbi.hwndList, [ref]$lb) | Out-Null
 [W.U32]::SetCursorPos([int](($lb.L + $lb.R) / 2), [int](($lb.T + $lb.B) / 2)) | Out-Null
 Start-Sleep -Milliseconds 200
+# Second half of the same guard: the wheel hits the window under the CURSOR.
+$pt = New-Object W.PT; [W.U32]::GetCursorPos([ref]$pt) | Out-Null
+$under = [W.U32]::WindowFromPoint($pt)
+if ($under -ne $cbi.hwndList) { Fail "HARNESS: cursor ($($pt.X),$($pt.Y)) is not over the dropdown list (under=$under list=$($cbi.hwndList)) - the scroll result is not trustworthy" }
 $topBefore = [W.U32]::SendMessageInt($comboH, 0x015B, 0, 0)   # CB_GETTOPINDEX
 for ($w = 0; $w -lt 5; $w++) { [W.U32]::mouse_event(0x0800, 0, 0, -360, [UIntPtr]::Zero); Start-Sleep -Milliseconds 120 }
 Start-Sleep -Milliseconds 250
@@ -223,8 +332,22 @@ Shot '02-monitor-showall'
 # Refresh keeps it populated.
 $refresh = Require (Find-El 'BUTTON' 'Refresh') "refresh button"
 Click-El $refresh; Wait-Idle
-if ((Combo-Count $combo) -lt 1) { Fail "target combo empty after refresh" }
+if ((Combo-Count $combo) -lt 2) { Fail "target combo empty after refresh" }
 Write-Host "click: refresh services"
+
+# Pick a known target so the TargetPath assertion at the end of the walk has a
+# subject: the app UNDER TEST itself - certainly running, certainly a Process
+# target, and its image path is known exactly ($Exe). CB_SETCURSEL is enough,
+# no click needed: MonitorPage::save() reads the pick through nwg's
+# ComboBox::selection(), which is a live CB_GETCURSEL. The script has no
+# find/select helper, hence the raw messages.
+$wantLabel = "Proc: $([IO.Path]::GetFileName($Exe))"
+$idx = [W.U32]::SendMessageStr($comboH, 0x0158, -1, $wantLabel)   # CB_FINDSTRINGEXACT
+if ($idx -lt 0) { Fail "target combo has no entry '$wantLabel' (the app under test should be listed as a running process)" }
+[W.U32]::SendMessageInt($comboH, 0x014E, $idx, 0) | Out-Null      # CB_SETCURSEL
+$cur = [W.U32]::SendMessageInt($comboH, 0x0147, 0, 0)             # CB_GETCURSEL
+if ($cur -ne $idx) { Fail "could not select '$wantLabel' (CB_SETCURSEL left the pick at $cur, wanted $idx)" }
+Write-Host "select: target -> '$wantLabel' (index $idx)"
 
 # Live status rows are present on the Monitor page. Match the status glyphs
 # (the subtitle also contains "scheduled task", so key off the leading marker).
@@ -241,23 +364,23 @@ Write-Host "status: '$($stTask.Current.Name)'"
 
 # --- Advanced dialog: open, screenshot, close ---
 $advBtn = Require (Find-El 'BUTTON' 'Advanced*') "Advanced button"
-Click-El $advBtn; Start-Sleep -Milliseconds 500
-$adv = Require (Find-Dialog 'Advanced options') "Advanced dialog"
+$adv = Require (Open-Dialog $advBtn 'Advanced options') "Advanced dialog"
 $advHwnd = [IntPtr]$adv.Current.NativeWindowHandle
 Shot '03-advanced-dialog' $adv
 $advClose = Require (Find-El 'BUTTON' 'Save*Close*' $adv) "Advanced close button"
-Click-El $advClose $advHwnd; Start-Sleep -Milliseconds 400
+Click-El $advClose $advHwnd
+Wait-DialogGone $adv 'Advanced options'
 if (-not $win.Current.IsEnabled) { Fail "main window still disabled after closing Advanced dialog" }
 Write-Host "dialog: advanced opened + closed"
 
 # --- SMTP dialog: open, screenshot, close ---
 $smtpBtn = Require (Find-El 'BUTTON' 'SMTP*') "SMTP button"
-Click-El $smtpBtn; Start-Sleep -Milliseconds 500
-$smtp = Require (Find-Dialog 'SMTP settings') "SMTP dialog"
+$smtp = Require (Open-Dialog $smtpBtn 'SMTP settings') "SMTP dialog"
 $smtpHwnd = [IntPtr]$smtp.Current.NativeWindowHandle
 Shot '04-smtp-dialog' $smtp
 $smtpClose = Require (Find-El 'BUTTON' 'Save*Close*' $smtp) "SMTP close button"
-Click-El $smtpClose $smtpHwnd; Start-Sleep -Milliseconds 400
+Click-El $smtpClose $smtpHwnd
+Wait-DialogGone $smtp 'SMTP settings'
 if (-not $win.Current.IsEnabled) { Fail "main window still disabled after closing SMTP dialog" }
 Write-Host "dialog: smtp opened + closed"
 
@@ -312,6 +435,33 @@ $mon = Require (Find-Nav 'Monitor') "nav: Monitor"
 Click-El $mon; Wait-Idle; Shot '10-back-monitor'
 if (-not (Find-Status)) { Fail "status panel missing after returning to Monitor" }
 Write-Host "nav:   Monitor (status panel intact)"
+
+# =====================  TargetPath survives a real save  =====================
+# The ONLY possible coverage for bitness::capture_target_path's single call
+# site (page_monitor.rs, MonitorPage::save): comment that one line out and the
+# whole Rust suite stays green while TargetPath never populates and bitness
+# silently degrades. No unit test can reach save() - it needs live nwg controls.
+#
+# Save Config (and Create Task) are the only buttons that WRITE config.json;
+# save() alone is in-memory. The footer is hidden on every LOG COLLECTOR page
+# (gui/mod.rs does set_visible(next == 0) for the whole row), so this has to run
+# with the Monitor page showing - hence the nav back above.
+$saveCfg = Require (Find-El 'BUTTON' 'Save Config') "Save Config button"
+Click-El $saveCfg; Wait-Idle; Start-Sleep -Milliseconds 500
+if (-not (Test-Path $cfgPath)) { Fail "Save Config wrote no config: $cfgPath" }
+$cfgJson = Get-Content $cfgPath -Raw | ConvertFrom-Json
+if ($cfgJson.PSObject.Properties.Name -notcontains 'TargetPath') { Fail "config.json has no TargetPath key" }
+$tp = [string]$cfgJson.TargetPath
+Write-Host "probe: TargetName='$($cfgJson.TargetName)' TargetPath='$tp'"
+# NON-EMPTY is the assertion that kills the mutant: set_target() cleared the
+# field (config.json was deleted before launch, so the saved name started
+# empty), and capture_target_path() is the only thing that can refill it.
+if ([string]::IsNullOrWhiteSpace($tp)) { Fail "TargetPath is EMPTY - bitness::capture_target_path() never ran (call site removed from MonitorPage::save?)" }
+if (-not (Test-Path $tp)) { Fail "TargetPath does not exist on disk: '$tp'" }
+$wantImage = [IO.Path]::GetFileName($Exe)
+if ([IO.Path]::GetFileName($tp) -ine $wantImage) { Fail "TargetPath names the wrong image: '$tp' (selected target was '$wantImage')" }
+Write-Host "probe: TargetPath captured, exists on disk, matches the selected target"
+Shot '11-saved-config'
 
 # =====================  Capture logs  =====================
 $logDst = Join-Path $OutDir 'logs'
