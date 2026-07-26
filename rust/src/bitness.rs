@@ -184,9 +184,14 @@ pub fn service_image_path(_service: &str) -> Option<PathBuf> {
 /// through to runtime detection rather than confidently answer "64-bit".
 fn image_path_from_reg_output(text: &str) -> Option<PathBuf> {
     // reg.exe line: "    ImagePath    REG_EXPAND_SZ    C:\path\to.exe -args"
-    // Locale caveat: the value name and the REG_* type tokens are not
-    // localized — same documented assumption as parse_sc_output in services.rs
-    // (en-US; C-CURE deployments are en-US).
+    //
+    // ponytail: shelling to reg.exe and scraping its text assumes the en-US
+    // token layout — the same documented assumption parse_sc_output already
+    // makes for sc.exe in services.rs (C-CURE deployments are en-US). Ceiling:
+    // a localized host where the value name or REG_* tokens are translated
+    // silently yields None, degrading to runtime detection. Upgrade path:
+    // RegGetValueW via the windows crate, which returns the value directly and
+    // is locale-proof — worth it only if a non-en-US deployment shows up.
     let raw = text.lines().find_map(|l| {
         let rest = l.trim_start().strip_prefix("ImagePath")?.trim_start();
         let mut parts = rest.splitn(2, char::is_whitespace);
@@ -283,8 +288,11 @@ fn running_process_path(name: &str) -> Option<PathBuf> {
         }
 
         let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        // MAX_PATH buffer: a longer image path fails the call rather than
-        // truncating, so we return None and `resolve` falls to runtime detect.
+        // ponytail: fixed MAX_PATH buffer. Ceiling: an image path longer than
+        // 260 chars fails the call rather than truncating, so we return None
+        // and `resolve` degrades to runtime detection — wrong-answer-free, just
+        // less capable. Upgrade path: retry on ERROR_INSUFFICIENT_BUFFER with a
+        // 32767 buffer, if a long-path install ever appears.
         let mut buf = [0u16; 260];
         let mut len = buf.len() as u32;
         let ok = QueryFullProcessImageNameW(
@@ -786,6 +794,10 @@ mod tests {
     fn reg_output_rejects_a_similarly_named_value() {
         // A bare starts_with("ImagePath") reads ImagePathBackup's data as ours.
         // Rejected because "Backup" lands in the REG_* type slot.
+        // Honesty note from the mutation run: this test does NOT uniquely kill
+        // the "REG_ check removed" mutant — with that check gone the value
+        // parses as the literal string "REG_SZ    C:\...", which .exists()
+        // then rejects. It is defence in depth, kept for the intent it pins.
         let me = std::env::current_exe().unwrap();
         let out = reg_output(&format!("ImagePathBackup    REG_SZ    {}", me.display()));
         assert_eq!(image_path_from_reg_output(&out), None);
