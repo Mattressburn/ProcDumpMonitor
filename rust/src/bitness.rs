@@ -56,6 +56,80 @@ pub fn bitness_from_pe(path: &Path) -> Bitness {
     }
 }
 
+/// Turn a raw registry `ImagePath` into a usable file path.
+///
+/// Handles: quoted paths, trailing arguments, the `\??\` NT prefix, and
+/// embedded environment variables. Pure — no registry access, so it is
+/// directly unit-testable.
+pub fn parse_image_path(raw: &str) -> Option<PathBuf> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // Quoted form is unambiguous: take what is inside the quotes.
+    let path = if let Some(rest) = s.strip_prefix('"') {
+        rest.split('"').next()?.to_string()
+    } else {
+        // Unquoted: split after the first ".exe" token.
+        // ponytail: ambiguous in theory (an unquoted path containing spaces AND
+        // arguments, or a directory literally named `...exe...`, e.g.
+        // `C:\App.exe.bak\svc.exe`, which truncates wrong), but this is what
+        // well-formed service entries look like. Upgrade path: probe candidate
+        // prefixes against the filesystem, if a real ImagePath ever breaks it.
+        //
+        // to_ascii_lowercase is load-bearing, do NOT "modernize" it to
+        // to_lowercase(): ASCII folding maps 0x41..=0x5A one byte to one byte
+        // and leaves every byte >= 0x80 alone, so byte indices and char
+        // boundaries are identical to the original and `s[..i + 4]` cannot
+        // panic. Unicode to_lowercase() can change byte length (U+0130 'İ' is
+        // 2 bytes, lowercases to 3), shifting indices into mid-codepoint.
+        match s.to_ascii_lowercase().find(".exe") {
+            Some(i) => s[..i + 4].to_string(),
+            None => s.to_string(),
+        }
+    };
+
+    let path = path.trim().trim_start_matches(r"\??\").trim();
+    if path.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(expand_env(path)))
+}
+
+/// Expand %VAR% tokens. std has no equivalent and we add no crates.
+fn expand_env(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) => {
+                let name = &after[..end];
+                match std::env::var(name) {
+                    Ok(v) => out.push_str(&v),
+                    // Unknown var: keep it literal rather than silently
+                    // producing a wrong path.
+                    Err(_) => {
+                        out.push('%');
+                        out.push_str(name);
+                        out.push('%');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                out.push('%');
+                out.push_str(after);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 pub struct BinaryChoice {
     pub actual: PathBuf,
     pub warning: Option<String>,
@@ -384,5 +458,56 @@ mod tests {
         std::fs::write(&d, &v).unwrap();
         assert_eq!(pe_machine(&d), None);
         let _ = std::fs::remove_file(&d);
+    }
+
+    #[test]
+    fn image_path_plain_unquoted() {
+        assert_eq!(
+            parse_image_path(r"C:\Program Files\SWH\CrossFire.Server.exe"),
+            Some(std::path::PathBuf::from(r"C:\Program Files\SWH\CrossFire.Server.exe"))
+        );
+    }
+
+    #[test]
+    fn image_path_quoted_with_arguments() {
+        // Quoted form is unambiguous: everything inside the quotes is the path.
+        assert_eq!(
+            parse_image_path(r#""C:\Program Files\SWH\CrossFire.Server.exe" -k netsvcs"#),
+            Some(std::path::PathBuf::from(r"C:\Program Files\SWH\CrossFire.Server.exe"))
+        );
+    }
+
+    #[test]
+    fn image_path_unquoted_with_arguments_splits_at_exe() {
+        // Unquoted with spaces AND args is genuinely ambiguous; split after the
+        // first ".exe" token, which is what Windows itself effectively does for
+        // well-formed service entries.
+        assert_eq!(
+            parse_image_path(r"C:\Windows\system32\svchost.exe -k netsvcs"),
+            Some(std::path::PathBuf::from(r"C:\Windows\system32\svchost.exe"))
+        );
+    }
+
+    #[test]
+    fn image_path_strips_nt_prefix() {
+        assert_eq!(
+            parse_image_path(r"\??\C:\Program Files\SWH\Driver.exe"),
+            Some(std::path::PathBuf::from(r"C:\Program Files\SWH\Driver.exe"))
+        );
+    }
+
+    #[test]
+    fn image_path_expands_environment_variables() {
+        // %SystemRoot% is set on every Windows host.
+        let got = parse_image_path(r"%SystemRoot%\system32\services.exe").unwrap();
+        let s = got.to_string_lossy().to_ascii_lowercase();
+        assert!(!s.contains('%'), "env var was not expanded: {s}");
+        assert!(s.ends_with(r"\system32\services.exe"), "unexpected: {s}");
+    }
+
+    #[test]
+    fn image_path_rejects_empty() {
+        assert_eq!(parse_image_path(""), None);
+        assert_eq!(parse_image_path("   "), None);
     }
 }
