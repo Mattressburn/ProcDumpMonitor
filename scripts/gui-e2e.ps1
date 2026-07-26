@@ -58,10 +58,14 @@ $Exe = (Resolve-Path $Exe).Path
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $OutDir = (Resolve-Path $OutDir).Path
 
-# Stale instances of the same exe would make the window lookup ambiguous.
+# Stale instances of the same exe would make the window lookup ambiguous - and a
+# stale one still holding config.json open would defeat the delete below, which
+# is what the whole TargetPath assertion rests on. WAIT for them to die.
 Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($Exe)) -ErrorAction SilentlyContinue |
-    Where-Object { $_.Path -eq $Exe } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Where-Object { $_.Path -eq $Exe } | Stop-Process -Force -PassThru -ErrorAction SilentlyContinue |
+    Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
 
+$script:retries = 0
 function Fail([string]$msg) { Write-Host "FAIL: $msg"; try { if ($script:proc -and !$script:proc.HasExited) { $script:proc.Kill() } } catch {}; exit 1 }
 
 # PRECONDITION: an unlocked, interactive desktop. This is the single biggest
@@ -98,6 +102,15 @@ Assert-Interactive
 # config.json lives beside the EXE (paths::install_dir), never in OutDir.
 $cfgPath = Join-Path (Split-Path $Exe) 'config.json'
 Remove-Item $cfgPath -Force -ErrorAction SilentlyContinue
+# VERIFY the delete. The assertion's entire discriminating power rests on this
+# file being gone: if it survives (locked, or a stale instance still holding it)
+# the app loads a config whose TargetName ALREADY equals the target we select,
+# set_target() sees no change and does not clear, and resolve_target_path()'s
+# Process arm trusts the existing target_path and writes it straight back -
+# green run, broken feature. That self-poisoning is exactly what a review
+# rejected once already, so it does not get to come back through a silent
+# -ErrorAction SilentlyContinue.
+if (Test-Path $cfgPath) { Fail "could not delete $cfgPath - the TargetPath assertion would be meaningless (file locked, or a stale instance still running?)" }
 Write-Host "reset:  removed $cfgPath"
 
 Write-Host "launch: $Exe"
@@ -125,6 +138,20 @@ $script:hwnd = [IntPtr]$win.Current.NativeWindowHandle
 # swallows every later click, in this run and the next. At Y=0 the footer sits
 # at y=990 and clicks land on the button. Not cosmetic: the TargetPath
 # assertion needs the Save Config button.
+#
+# COORDINATE-SPACE CHECK FIRST. UIA BoundingRectangles are physical px, but
+# Forms' WorkingArea is in THIS process's space, which Windows virtualizes when
+# the host is DPI-unaware - 1920x1080 reads back as 1536x864 at 125%. Both
+# spaces demonstrably exist on this box. If they ever disagree, the work-area
+# guard in Click-El would reject EVERY footer click as out of bounds: a blanket
+# false red, the exact failure class this script exists to eliminate. Compared
+# on the VIRTUAL screen, which is what UIA's root element covers, so this stays
+# correct on multi-monitor.
+$vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+$desk = $auto::RootElement.Current.BoundingRectangle
+if ([Math]::Abs($desk.Width - $vs.Width) -gt 2 -or [Math]::Abs($desk.Height - $vs.Height) -gt 2) {
+    Fail "HARNESS: coordinate-space mismatch - UIA sees a $([int]$desk.Width)x$([int]$desk.Height) desktop, this process sees $($vs.Width)x$($vs.Height) (DPI virtualization). Every screen-coordinate comparison would be wrong; run under a DPI-aware host."
+}
 $script:workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
 [W.U32]::SetWindowPos($script:hwnd, [IntPtr]::Zero, $script:workArea.X, $script:workArea.Y, 0, 0, 0x0005) | Out-Null  # NOSIZE|NOZORDER
 Start-Sleep -Milliseconds 400
@@ -174,8 +201,11 @@ function Click-El([object]$el, [System.IntPtr]$fg = $script:hwnd) {
     # on it opens a full-screen topmost shell overlay that silently eats every
     # subsequent click - one unreachable control turns into a run-wide mystery
     # (and poisons the NEXT run too). Fail loudly instead.
+    # NOT a HARNESS fault: an unreachable control is a real product-layout
+    # defect (the window does not fit this display), so it must not be labelled
+    # as a harness problem and waved away.
     if (-not $script:workArea.Contains($x, $y)) {
-        Fail "HARNESS: click target ($x,$y) for '$($el.Current.Name)' is outside the work area $($script:workArea) - the window does not fit this display, so the control is unreachable"
+        Fail "LAYOUT: click target ($x,$y) for '$($el.Current.Name)' is outside the work area $($script:workArea) - the window does not fit this display, so a real user cannot reach this control either"
     }
     [W.U32]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 120
     [W.U32]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)   # LEFTDOWN
@@ -264,6 +294,7 @@ function Open-Dialog([object]$btn, [string]$title) {
     Click-El $btn; Start-Sleep -Milliseconds 500
     $d = Find-Dialog $title
     if (-not $d) {
+        $script:retries++
         Write-Host "retry: '$title' did not appear after the first click - clicking once more"
         Click-El $btn; Start-Sleep -Milliseconds 500
         $d = Find-Dialog $title
@@ -346,6 +377,10 @@ Start-Sleep -Milliseconds 200
 $pt = New-Object W.PT; [W.U32]::GetCursorPos([ref]$pt) | Out-Null
 $under = [W.U32]::WindowFromPoint($pt)
 if ($under -ne $cbi.hwndList) { Fail "HARNESS: cursor ($($pt.X),$($pt.Y)) is not over the dropdown list (under=$under list=$($cbi.hwndList)) - the scroll result is not trustworthy" }
+# Re-check: ~1s elapsed while the list dropped, and activation can be lost in
+# it. The wheel is about to fire NOW, so this is the reading that matters.
+$fg2 = [W.U32]::GetForegroundWindow()
+if ($fg2 -ne $script:hwnd) { Fail "HARNESS: lost the foreground while dropping the list (fg=$fg2 app=$($script:hwnd)) - the scroll result is not trustworthy" }
 $topBefore = [W.U32]::SendMessageInt($comboH, 0x015B, 0, 0)   # CB_GETTOPINDEX
 for ($w = 0; $w -lt 5; $w++) { [W.U32]::mouse_event(0x0800, 0, 0, -360, [UIntPtr]::Zero); Start-Sleep -Milliseconds 120 }
 Start-Sleep -Milliseconds 250
@@ -366,7 +401,7 @@ Shot '02-monitor-showall'
 # Refresh keeps it populated.
 $refresh = Require (Find-El 'BUTTON' 'Refresh') "refresh button"
 Click-El $refresh; Wait-Idle
-if ((Combo-Count $combo) -lt 2) { Fail "target combo empty after refresh" }
+if ((Combo-Count $combo) -lt 2) { Fail "target combo holds only the hint row after refresh" }
 Write-Host "click: refresh services"
 
 # Pick a known target so the TargetPath assertion at the end of the walk has a
@@ -516,5 +551,10 @@ if ($run) {
 Write-Host "close: app"
 if (-not $proc.HasExited) { $proc.CloseMainWindow() | Out-Null; Start-Sleep -Milliseconds 800 }
 if (-not $proc.HasExited) { $proc.Kill() }
+# A consumed retry means the PRODUCT worked and the HARNESS stuttered, so it
+# does not fail the run - that would re-create the harness-fault-reads-as-
+# product-bug confusion this script exists to remove. But a scrolled-past
+# "retry:" line is easy to miss, so it is restated where nobody can miss it.
+if ($script:retries -gt 0) { Write-Host "warn:  $($script:retries) dialog retry(ies) consumed - a first click was lost; investigate before trusting this as a clean run" }
 Write-Host "OK: e2e walk complete, screenshots + logs in $OutDir"
 exit 0
