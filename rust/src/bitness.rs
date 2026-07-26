@@ -1000,6 +1000,16 @@ mod tests {
     }
 
     #[test]
+    fn resolve_of_a_default_config_is_unresolved() {
+        // Empty target_name AND empty target_path is the GUI's state at
+        // startup, and Task 6 calls resolve() on a 3s poll timer — so this is
+        // the most-executed input in the product. running_process_path guards
+        // on is_empty; detect() does not, and matches on `"" == ""`. Nothing
+        // else pins that an empty name cannot latch onto a nameless process.
+        assert_eq!(resolve(&Config::default()), (Bitness::Unknown, "unresolved"));
+    }
+
+    #[test]
     fn resolve_falls_back_to_unknown_for_an_unresolvable_target() {
         let mut c = Config::default();
         c.target_type = TargetType::Process;
