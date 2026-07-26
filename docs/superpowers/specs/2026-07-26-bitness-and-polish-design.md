@@ -11,12 +11,18 @@ This document specifies three phases. **They are not one implementation plan.**
 
 | Phase | Content | Unit |
 |---|---|---|
-| **1. Bitness** | PE-header resolution, wiring, `TargetPath` config field, tests | Correctness fix. Self-contained, own tests, own verification. **Goes to planning now.** |
-| **2. Defects** | Footer clamp, picker filter + empty state, duplicate service names, warning placement, numeric labels, status colors | Touches layout on the Monitor page + shell. Separate plan. |
+| **1. Bitness + default target** | PE-header resolution, wiring, `TargetPath` config field, tests, **and the CrossFire default selection** | Correctness fix. Self-contained, own tests, own verification. **Goes to planning now.** |
+| **2. Defects** | Footer clamp, picker filter box, duplicate service names, warning placement, numeric labels, status colors | Touches layout on the Monitor page + shell. Separate plan. |
 | **3. Visual pass** | shadcn-locked typography, borders, status semantics across five pages | Separate plan; depends on phase 2 landing first. |
 
 Phase 1 ships independently and is worth shipping alone: it is the difference
 between a usable and an unusable dump for the 32-bit Software House clients.
+
+**Why the default selection is in Phase 1, not Phase 2:** it is ~15 lines in the
+page's `load()` and needs nothing from the filter `Edit`, so it does not depend
+on the Phase 2 layout work. It also makes Phase 1 demoable end-to-end — opening
+the app selects the CrossFire server and immediately shows its resolved bitness
+and the ProcDump binary that will be used. The filter box stays in Phase 2.
 
 ## Problem
 
@@ -187,8 +193,38 @@ block Create Task; pre-arming a not-yet-installed target is legitimate.
   ~12 lines in `mod.rs`.
 - **Picker:** a filter `Edit` above the combo; typing repopulates the combo from
   a retained source `Vec` on `OnTextInput`. nwg has no autocomplete, so this is
-  the mechanism. Empty state: hint row `- Select a process or service -` at
-  index 0, preselecting the saved target when config names one.
+  the mechanism.
+
+- **Default selection** (decided 2026-07-26 by the user: "default to the
+  crossfire process — if that's running that's the one we want 90% of the
+  time"). On load, select the first rule that matches:
+
+  | # | Rule | Rationale |
+  |---|---|---|
+  | 1 | Saved target from `config.json`, if it resolves to a live entry | An explicit prior choice must never be overridden |
+  | 2 | `SoftwareHouse.CrossFire.Server.exe`, **if running** | The 90% case on a C·CURE server |
+  | 3 | Hint row `- Select a process or service -` at index 0 | Nothing sensible to guess |
+
+  **Match exactly, not by substring.** Four processes share the
+  `SoftwareHouse.CrossFire.` prefix — `Server.exe`,
+  `ServerComponentFramework.exe`, `ImportWatcherService.exe`,
+  `ReportServerService.exe` — so a `contains("crossfire")` test is ambiguous and
+  would pick whichever sorted first. Implement as a small ordered const:
+
+  ```rust
+  // Preferred default targets, exact (case-insensitive) exe-name match,
+  // highest priority first. Only used when config names no target.
+  const PREFERRED_TARGETS: &[&str] = &["SoftwareHouse.CrossFire.Server.exe"];
+  ```
+
+  One entry today; extend the list if other targets earn a default. Do **not**
+  build a config-driven priority system for this — YAGNI.
+
+  *Open consideration, not blocking:* C·CURE also exposes CrossFire as a
+  **service**, and `procdump -service <name>` combined with `-w` survives a
+  service restart more gracefully than watching a process name. This spec
+  implements the process default as requested; worth revisiting if field use
+  shows the monitor losing its target across restarts.
 - **Duplicate service naming:** suppress the appended `(short)` when the display
   name already ends with it, case-insensitively.
 - **Warning placement:** move the ProcDump-binary warning out of the field grid
