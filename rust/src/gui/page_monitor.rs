@@ -603,8 +603,12 @@ impl MonitorPage {
         } else {
             cfg.task_name = typed_task;
         }
-        cfg.target_name = name;
-        cfg.target_type = ttype;
+        // Assigns name/type AND captures the image path, so bitness survives
+        // the target not running. Fused deliberately: the stale-path check
+        // needs the previous name/type, so this must not be split (see
+        // bitness::set_target). Lives here in write_fields, not save(), because
+        // save() runs after write_fields has already overwritten the old name.
+        bitness::set_target(cfg, &name, ttype);
 
         cfg.scenario = match self.cmb_scenario.selection_string() {
             Some(s) if s != "Custom" => s,

@@ -244,6 +244,37 @@ pub fn resolve_target_path(cfg: &Config) -> Option<PathBuf> {
     }
 }
 
+/// Point `cfg` at a target and refresh its cached `target_path`.
+///
+/// This OWNS the name/type assignment on purpose — the clear-on-change rule
+/// below needs the PREVIOUS name/type, so nothing may assign them first. The
+/// brief's snippet (capture appended after `cfg.target_name = name`) is
+/// defective for exactly that reason: by then the old identity is gone, and
+/// `resolve_target_path`'s Process arm trusts `cfg.target_path` FIRST, so
+/// switching from a still-installed target to a new one re-blesses the OLD
+/// exe's path and every later bitness read answers for the wrong binary.
+/// `.exists()` cannot catch it — the previous install is usually still there.
+///
+/// Two rules, both load-bearing:
+///  * target changed -> drop the cached path BEFORE resolving. It described
+///    the previous target and is worse than nothing.
+///  * resolve failed -> keep whatever is there. A target that merely stopped
+///    running must not lose a good path (Service targets especially: their
+///    resolve shells to reg.exe, which can fail transiently).
+///
+/// Names are compared case-insensitively: Windows process and service names
+/// are, and a casing-only difference is the same target.
+pub fn set_target(cfg: &mut Config, name: &str, ttype: TargetType) {
+    if !cfg.target_name.eq_ignore_ascii_case(name) || cfg.target_type != ttype {
+        cfg.target_path.clear();
+    }
+    cfg.target_name = name.to_string();
+    cfg.target_type = ttype;
+    if let Some(p) = resolve_target_path(cfg) {
+        cfg.target_path = p.to_string_lossy().to_string();
+    }
+}
+
 /// Full image path of a running process, found by exe name.
 ///
 /// ponytail: `list_process_names()` dedupes by name, so if two running
@@ -1022,6 +1053,98 @@ mod tests {
         // on is_empty; detect() does not, and matches on `"" == ""`. Nothing
         // else pins that an empty name cannot latch onto a nameless process.
         assert_eq!(resolve(&Config::default()), (Bitness::Unknown, "unresolved"));
+    }
+
+    // ------------------------------------------------------------ task 4 --
+
+    #[test]
+    fn set_target_captures_the_running_process_path() {
+        // The happy path, and the only test that pins the `cfg.target_path = p`
+        // write itself. Delete that line and every other set_target test still
+        // passes (they all assert on clearing/preserving).
+        let mut c = Config::default();
+        assert_eq!(c.target_path, "", "precondition: nothing cached");
+        set_target(&mut c, &my_process_name(), TargetType::Process);
+        assert!(!c.target_path.is_empty(), "capture wrote nothing");
+        assert!(
+            c.target_path
+                .eq_ignore_ascii_case(&std::env::current_exe().unwrap().to_string_lossy()),
+            "got {}",
+            c.target_path
+        );
+        assert_eq!(c.target_name, my_process_name());
+    }
+
+    #[test]
+    fn set_target_clears_a_stale_path_when_the_name_changes() {
+        // THE sharp case. The old target's exe is still installed, so
+        // .exists() is happy and resolve_target_path's Process arm would hand
+        // the OLD path straight back — cementing a wrong PE forever. Drop the
+        // name comparison and target_path stays the previous exe.
+        let me = std::env::current_exe().unwrap();
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = "PdmPreviousTarget.exe".into();
+        c.target_path = me.to_string_lossy().to_string();
+        assert!(me.exists(), "precondition: the old exe is still on disk");
+
+        set_target(&mut c, "PdmDefinitelyNotRunning.exe", TargetType::Process);
+        assert_eq!(c.target_path, "", "stale path survived a target switch");
+        assert_eq!(c.target_name, "PdmDefinitelyNotRunning.exe");
+    }
+
+    #[test]
+    fn set_target_clears_a_stale_path_when_only_the_type_changes() {
+        // Same name, Process -> Service. Kills the `cfg.target_type != ttype`
+        // half of the condition: without it nothing clears, the Service arm
+        // ignores target_path and returns None, so the process-era path
+        // survives on a service target.
+        let me = std::env::current_exe().unwrap();
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = my_process_name();
+        c.target_path = me.to_string_lossy().to_string();
+
+        set_target(&mut c, &my_process_name(), TargetType::Service);
+        assert_eq!(c.target_path, "", "process-era path survived a type switch");
+        assert_eq!(c.target_type, TargetType::Service);
+    }
+
+    #[test]
+    fn set_target_keeps_a_good_path_when_resolve_fails() {
+        // Service target that no longer resolves (uninstalled / reg.exe
+        // hiccup). The cached path must survive — losing it is how a stopped
+        // target loses its bitness. Kills both an unconditional clear and a
+        // `= resolve().unwrap_or_default()` shaped write.
+        let me = std::env::current_exe().unwrap().to_string_lossy().to_string();
+        let mut c = Config::default();
+        c.target_type = TargetType::Service;
+        c.target_name = "PdmDefinitelyNotAService".into();
+        c.target_path = me.clone();
+        assert_eq!(
+            resolve_target_path(&c),
+            None,
+            "precondition: this target must not resolve"
+        );
+
+        set_target(&mut c, "PdmDefinitelyNotAService", TargetType::Service);
+        assert_eq!(c.target_path, me, "a failed resolve erased a good path");
+    }
+
+    #[test]
+    fn set_target_treats_a_casing_only_name_change_as_the_same_target() {
+        // Windows service/process names are case-insensitive; `!=` here would
+        // throw the cached path away every time the dropdown label's casing
+        // differed from what was saved.
+        let me = std::env::current_exe().unwrap().to_string_lossy().to_string();
+        let mut c = Config::default();
+        c.target_type = TargetType::Service;
+        c.target_name = "PdmDefinitelyNotAService".into();
+        c.target_path = me.clone();
+
+        set_target(&mut c, "PDMDEFINITELYNOTASERVICE", TargetType::Service);
+        assert_eq!(c.target_path, me, "casing-only change cleared the path");
+        assert_eq!(c.target_name, "PDMDEFINITELYNOTASERVICE", "name still updates");
     }
 
     #[test]

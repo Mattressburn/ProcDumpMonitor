@@ -47,13 +47,18 @@ pub struct Config {
     pub config_version: i32,
     pub target_name: String,
     pub target_type: TargetType,
-    /// Full image path of a **Process** target, captured when it is picked from
-    /// the dropdown. Lets bitness be read from the PE on disk when the target
-    /// is not running (the `-w` case).
+    /// Full image path of a **Process** target. Lets bitness be read from the
+    /// PE on disk when the target is not running (the `-w` case).
+    ///
+    /// Written only by `bitness::set_target`, which the Monitor page's
+    /// `write_fields` calls on every persist path — and which CLEARS this field
+    /// whenever the target name or type changes, because a path belonging to
+    /// the previous target would resolve the wrong binary.
     ///
     /// Service targets do NOT read this: `bitness::resolve_target_path`'s
     /// Service arm always re-reads the registry ImagePath instead, so anything
-    /// stored here for a service is inert.
+    /// stored here for a service is inert (deliberate — a persisted copy of a
+    /// registry-authoritative value goes stale on service upgrade/reinstall).
     pub target_path: String,
     pub proc_dump_path: String,
     pub dump_directory: String,
@@ -274,6 +279,26 @@ mod tests {
         assert_eq!(proc_str, TargetType::Process);
         let svc_str = serde_json::from_str::<TargetType>(r#""Service""#).unwrap();
         assert_eq!(svc_str, TargetType::Service);
+    }
+
+    #[test]
+    fn target_path_defaults_empty_and_round_trips() {
+        let mut c = Config::default();
+        assert_eq!(c.target_path, "");
+        c.target_path = r"C:\Program Files\SWH\CrossFire.Server.exe".into();
+        let json = serde_json::to_string(&c).unwrap();
+        assert!(json.contains(r#""TargetPath""#), "must serialize PascalCase");
+        let back: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.target_path, c.target_path);
+    }
+
+    #[test]
+    fn config_without_target_path_still_loads() {
+        // An existing config.json predating this field must not fail to parse.
+        let json = r#"{"ConfigVersion":1,"TargetName":"CrossFire","TargetType":"Service"}"#;
+        let c: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(c.target_path, "");
+        assert_eq!(c.target_name, "CrossFire");
     }
 
     #[test]
