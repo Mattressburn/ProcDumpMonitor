@@ -644,6 +644,15 @@ impl MonitorPage {
         // keystroke in the option text boxes). write_fields has already
         // cleared any path belonging to a previous target, so this cannot
         // re-bless a stale one.
+        //
+        // ponytail: THIS ONE LINE is the entire production writer of
+        // cfg.target_path. Comment it out and all 107 unit tests still pass
+        // (demonstrated in review) while the feature dies silently — bitness
+        // degrades to the pre-plan runtime-only behaviour with no error. No
+        // unit test can cover it: reaching save() needs live nwg controls.
+        // Ceiling accepted deliberately. Upgrade path: assert TargetPath in
+        // scripts/gui-e2e.ps1 after a Save Config click (Task 8 owns that);
+        // until then this line is guarded by review only.
         bitness::capture_target_path(cfg);
         self.txt_task_name.set_text(&cfg.task_name);
 

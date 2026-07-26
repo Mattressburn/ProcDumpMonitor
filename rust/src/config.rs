@@ -50,10 +50,19 @@ pub struct Config {
     /// Full image path of a **Process** target. Lets bitness be read from the
     /// PE on disk when the target is not running (the `-w` case).
     ///
-    /// Written only by `bitness::set_target`, which the Monitor page's
-    /// `write_fields` calls on every persist path — and which CLEARS this field
-    /// whenever the target name or type changes, because a path belonging to
-    /// the previous target would resolve the wrong binary.
+    /// Maintained by two halves of a deliberate split, both in `bitness`:
+    ///  * `set_target` CLEARS this field whenever the target name or type
+    ///    changes (a path belonging to the previous target would resolve the
+    ///    wrong binary). Cheap and pure; called from `page_monitor`'s
+    ///    `write_fields`, which runs on every preview refresh.
+    ///  * `capture_target_path` does the resolve and the WRITE. It hits the
+    ///    filesystem, and the registry for a Service target, so it is called
+    ///    only from `page_monitor`'s `save()` — the real-persist path.
+    ///
+    /// The split exists so the preview path does no I/O; fused, it cost one
+    /// `reg.exe` spawn per typed character. Ordering is what keeps it correct:
+    /// `save() -> write_fields() -> set_target()` clears before
+    /// `capture_target_path()` runs, so a stale path can never be re-blessed.
     ///
     /// Service targets do NOT read this: `bitness::resolve_target_path`'s
     /// Service arm always re-reads the registry ImagePath instead, so anything
