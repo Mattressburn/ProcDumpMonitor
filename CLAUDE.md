@@ -59,7 +59,14 @@ BUTTON/checkbox captions need `&&` to render one `&`.
   window's left edge for sidebar-column filtering), and PowerShell `-eq` is
   case-INSENSITIVE so the "MONITOR" group caption shadows the "Monitor" nav item
   — match nav labels with `-ceq`. Owned dialogs nest UNDER their owner in the UIA
-  tree (search Descendants, not root Children).
+  tree (search Descendants, not root Children), and a modal dialog disables its
+  owner, so foreground the DIALOG's hwnd before clicking its buttons.
+- **Probe the mechanism the user uses, not a shortcut around it.** A window
+  message that bypasses the feature under test can pass on a broken build:
+  `CB_SETTOPINDEX` repositions a dropdown even when it has no scrollbar and the
+  wheel is dead, so it "verified" an unscrollable list. For interaction claims,
+  drive real input (`SetCursorPos` + `mouse_event`) and assert observable state
+  (`CB_GETTOPINDEX` advanced, `WS_VSCROLL` present).
 
 ## nwg (native-windows-gui) rules learned the hard way
 
@@ -71,12 +78,15 @@ BUTTON/checkbox captions need `&&` to render one `&`.
   before registration keep stale pixels forever.
 - **Console children stall the pump:** any `Command` spawn from the GUI must set
   `CREATE_NO_WINDOW` (see `services.rs` / `task.rs`) or the wizard freezes.
-- **ComboBox height IS the dropdown height:** Win32 uses a combobox's
-  `CreateWindowEx` height for the control *with its list dropped down* (the closed
-  control always renders one item tall), and nwg passes `size` straight through.
-  Building one at the 26px field height yields a list with no usable rows — it
-  reads as "scrolling is broken". Give any long-list combo ~300 logical px
-  (`page_monitor.rs` target combo); short preset combos are fine at 26.
+- **nwg ComboBox dropdowns cannot scroll without help:** `ComboBoxFlags` exposes
+  only VISIBLE/DISABLED/TAB_STOP and `forced_flags()` is
+  `CBS_DROPDOWNLIST | WS_CHILD | WS_BORDER` — **`WS_VSCROLL` is never passed**, and
+  Win32 requires it *at creation* for a drop-down list to get a vertical scrollbar.
+  Without it a long list silently caps at the ~30 rows Windows shows
+  (`CB_GETMINVISIBLE`) and the wheel does nothing. Build long-list combos through
+  `page_monitor.rs`'s `mk_combo`, which injects the bit via
+  `ComboBoxFlags::from_bits_unchecked` (bitflags 1.3). The create *height* is NOT
+  the lever here — 26 and 300 both yield the same 30-row list.
 - All GUI coordinates are LOGICAL px — nwg's `high-dpi` feature scales positions,
   sizes, and fonts. Never multiply by `scale_factor()` except in raw GDI paint paths.
 - The GUI design system (grid, colors, fonts) is specified in
