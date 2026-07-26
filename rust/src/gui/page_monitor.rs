@@ -1031,6 +1031,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn label_on_a_32bit_os_carries_the_meaning_not_the_word_unknown() {
+        // The THIRD shape select_binary can produce for Unknown, and the one
+        // the "Unknown must survive" requirement did not anticipate: the
+        // `!os_is_64` branch returns BEFORE `match bitness`, so its summary is
+        // "32-bit OS -> procdump.exe" whatever `b` is, and the literal word
+        // "Unknown" is gone.
+        //
+        // Deliberately NOT fixed. The requirement's stated purpose is that the
+        // label must not imply a verified 64-bit answer -- and this text cannot:
+        // it names procdump.exe, and the trailing clause says outright that the
+        // bitness could not be determined. Injecting "Unknown" here would mean
+        // changing `select_binary`, which monitor.rs also depends on.
+        // Unreachable on any 64-bit host, so this is pinned here or nowhere.
+        let d = dir_with(&["procdump.exe", "procdump64.exe"]);
+        let c = bitness::select_binary(bitness::Bitness::Unknown, &d, false);
+        let t = bitness_label(bitness::Bitness::Unknown, "unresolved", &c);
+        assert_eq!(
+            t,
+            "32-bit OS -> procdump.exe \
+             - could not determine target bitness; verify manually."
+        );
+        assert!(!t.contains("Unknown"), "documented gap changed: {t}");
+    }
+
     // ---- bitness_text: the wiring update_bitness uses ---------------------
 
     #[test]
