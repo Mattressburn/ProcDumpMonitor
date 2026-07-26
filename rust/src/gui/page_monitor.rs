@@ -603,11 +603,11 @@ impl MonitorPage {
         } else {
             cfg.task_name = typed_task;
         }
-        // Assigns name/type AND captures the image path, so bitness survives
-        // the target not running. Fused deliberately: the stale-path check
-        // needs the previous name/type, so this must not be split (see
-        // bitness::set_target). Lives here in write_fields, not save(), because
-        // save() runs after write_fields has already overwritten the old name.
+        // Assigns name/type and drops a cached target_path belonging to the
+        // PREVIOUS target. Must live here, not in save(): the clear needs the
+        // old name/type, which this line is about to overwrite. Cheap and
+        // control-pure — the matching capture (which hits the registry) is in
+        // save() instead, because this runs on every keystroke.
         bitness::set_target(cfg, &name, ttype);
 
         cfg.scenario = match self.cmb_scenario.selection_string() {
@@ -638,6 +638,13 @@ impl MonitorPage {
     /// protect a freshly typed webhook URL and then clear the field).
     pub fn save(&self, cfg: &mut Config) -> bool {
         self.write_fields(cfg);
+        // Capture the image path so bitness survives the target not running.
+        // Here and NOT in write_fields: this shells to reg.exe for a Service
+        // target, and write_fields runs on every preview refresh (i.e. every
+        // keystroke in the option text boxes). write_fields has already
+        // cleared any path belonging to a previous target, so this cannot
+        // re-bless a stale one.
+        bitness::capture_target_path(cfg);
         self.txt_task_name.set_text(&cfg.task_name);
 
         let url = self.txt_webhook.text();

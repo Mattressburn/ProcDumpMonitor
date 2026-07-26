@@ -244,23 +244,21 @@ pub fn resolve_target_path(cfg: &Config) -> Option<PathBuf> {
     }
 }
 
-/// Point `cfg` at a target and refresh its cached `target_path`.
+/// Point `cfg` at a target, dropping any cached `target_path` that belonged to
+/// the PREVIOUS one.
 ///
-/// This OWNS the name/type assignment on purpose — the clear-on-change rule
-/// below needs the PREVIOUS name/type, so nothing may assign them first. The
-/// brief's snippet (capture appended after `cfg.target_name = name`) is
-/// defective for exactly that reason: by then the old identity is gone, and
-/// `resolve_target_path`'s Process arm trusts `cfg.target_path` FIRST, so
-/// switching from a still-installed target to a new one re-blesses the OLD
-/// exe's path and every later bitness read answers for the wrong binary.
-/// `.exists()` cannot catch it — the previous install is usually still there.
+/// CHEAP AND PURE: no filesystem, no registry, no subprocess. That is a
+/// requirement, not an accident — the Monitor page calls this from
+/// `write_fields`, which runs on every preview refresh, i.e. on every
+/// keystroke in seven text boxes. Do not move `capture_target_path`'s work in
+/// here (see its doc comment).
 ///
-/// Two rules, both load-bearing:
-///  * target changed -> drop the cached path BEFORE resolving. It described
-///    the previous target and is worse than nothing.
-///  * resolve failed -> keep whatever is there. A target that merely stopped
-///    running must not lose a good path (Service targets especially: their
-///    resolve shells to reg.exe, which can fail transiently).
+/// This OWNS the name/type assignment on purpose: the clear rule needs the
+/// PREVIOUS name/type, so nothing may assign them first. Without the clear,
+/// `resolve_target_path`'s Process arm — which trusts `cfg.target_path` before
+/// it ever looks at the name — hands back the OLD target's exe on a target
+/// switch, and the capture writes it straight back. `.exists()` cannot catch
+/// that: the previous install is usually still on disk.
 ///
 /// Names are compared case-insensitively: Windows process and service names
 /// are, and a casing-only difference is the same target.
@@ -270,6 +268,25 @@ pub fn set_target(cfg: &mut Config, name: &str, ttype: TargetType) {
     }
     cfg.target_name = name.to_string();
     cfg.target_type = ttype;
+}
+
+/// Refresh `cfg.target_path` from the live system so bitness survives the
+/// target not running.
+///
+/// EXPENSIVE — for a Service target this shells to `reg.exe`. Call ONLY from
+/// real-persist paths (`MonitorPage::save`), never from the preview path.
+/// Split out of `set_target` for exactly that reason: fused, it cost one
+/// `reg.exe` spawn per typed character on the Monitor page. Nothing reads
+/// `target_path` to build the preview (`procdump::build_args` never touches
+/// it), so the preview clone does not need this.
+///
+/// Must run AFTER `set_target` has cleared any stale path, which the
+/// `save() -> write_fields() -> set_target()` order guarantees.
+///
+/// `if let Some` is load-bearing: a failed resolve must KEEP whatever is
+/// there. A target that merely stopped running must not lose a good path
+/// (Service targets especially — their resolve can fail transiently).
+pub fn capture_target_path(cfg: &mut Config) {
     if let Some(p) = resolve_target_path(cfg) {
         cfg.target_path = p.to_string_lossy().to_string();
     }
@@ -1058,13 +1075,35 @@ mod tests {
     // ------------------------------------------------------------ task 4 --
 
     #[test]
-    fn set_target_captures_the_running_process_path() {
+    fn set_target_does_not_resolve_or_capture() {
+        // set_target runs on EVERY preview refresh -- which is every keystroke
+        // in the Monitor page's seven option text boxes. It must stay free of
+        // filesystem/registry work; for a Service target a resolve here is a
+        // reg.exe spawn per typed character.
+        //
+        // The target used here IS running, so resolve_target_path would
+        // happily answer. Fuse the capture back into set_target and this goes
+        // red -- which is the whole point of the split.
+        let mut c = Config::default();
+        set_target(&mut c, &my_process_name(), TargetType::Process);
+        assert_eq!(c.target_name, my_process_name());
+        assert_eq!(c.target_type, TargetType::Process);
+        assert_eq!(c.target_path, "", "set_target must not resolve");
+        // ...and prove the emptiness above is a real abstention, not the
+        // target being unresolvable.
+        capture_target_path(&mut c);
+        assert!(!c.target_path.is_empty(), "precondition: this target DOES resolve");
+    }
+
+    #[test]
+    fn capture_target_path_captures_the_running_process_path() {
         // The happy path, and the only test that pins the `cfg.target_path = p`
-        // write itself. Delete that line and every other set_target test still
+        // write itself. Delete that line and every other test here still
         // passes (they all assert on clearing/preserving).
         let mut c = Config::default();
+        c.target_name = my_process_name();
         assert_eq!(c.target_path, "", "precondition: nothing cached");
-        set_target(&mut c, &my_process_name(), TargetType::Process);
+        capture_target_path(&mut c);
         assert!(!c.target_path.is_empty(), "capture wrote nothing");
         assert!(
             c.target_path
@@ -1072,15 +1111,34 @@ mod tests {
             "got {}",
             c.target_path
         );
-        assert_eq!(c.target_name, my_process_name());
+    }
+
+    #[test]
+    fn set_target_then_capture_does_not_re_bless_the_previous_targets_path() {
+        // The composed sequence a real persist performs
+        // (save -> write_fields -> set_target, then save -> capture), and the
+        // regression guard for the defect in the brief's snippet. The old
+        // target's exe is still installed, so .exists() is happy and
+        // resolve_target_path's Process arm would hand the OLD path straight
+        // back -- cementing a wrong PE forever. Drop the clear from set_target
+        // and this goes red even though each half looks fine alone.
+        let me = std::env::current_exe().unwrap();
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = "PdmPreviousTarget.exe".into();
+        c.target_path = me.to_string_lossy().to_string();
+        assert!(me.exists(), "precondition: the old exe is still on disk");
+
+        set_target(&mut c, "PdmDefinitelyNotRunning.exe", TargetType::Process);
+        capture_target_path(&mut c);
+        assert_eq!(c.target_path, "", "re-blessed the previous target's path");
     }
 
     #[test]
     fn set_target_clears_a_stale_path_when_the_name_changes() {
-        // THE sharp case. The old target's exe is still installed, so
-        // .exists() is happy and resolve_target_path's Process arm would hand
-        // the OLD path straight back — cementing a wrong PE forever. Drop the
-        // name comparison and target_path stays the previous exe.
+        // The clear rule in isolation (the composed consequence is pinned by
+        // set_target_then_capture_does_not_re_bless_the_previous_targets_path).
+        // Drop the name comparison and target_path stays the previous exe.
         let me = std::env::current_exe().unwrap();
         let mut c = Config::default();
         c.target_type = TargetType::Process;
@@ -1111,7 +1169,7 @@ mod tests {
     }
 
     #[test]
-    fn set_target_keeps_a_good_path_when_resolve_fails() {
+    fn capture_target_path_keeps_a_good_path_when_resolve_fails() {
         // Service target that no longer resolves (uninstalled / reg.exe
         // hiccup). The cached path must survive — losing it is how a stopped
         // target loses its bitness. Kills both an unconditional clear and a
@@ -1128,6 +1186,7 @@ mod tests {
         );
 
         set_target(&mut c, "PdmDefinitelyNotAService", TargetType::Service);
+        capture_target_path(&mut c);
         assert_eq!(c.target_path, me, "a failed resolve erased a good path");
     }
 
