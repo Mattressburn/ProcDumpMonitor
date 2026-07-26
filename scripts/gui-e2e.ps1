@@ -48,6 +48,8 @@ namespace W {
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RC r);
     [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int idx);
     [DllImport("user32.dll")] public static extern int GetWindowThreadProcessId(IntPtr h, out int pid);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
   }
 }
 '@
@@ -113,6 +115,24 @@ for ($i = 0; $i -lt 60 -and -not $win; $i++) {
 if (-not $win) { Fail "main window not found within 15s" }
 Write-Host "window: '$($win.Current.Name)'"
 $script:hwnd = [IntPtr]$win.Current.NativeWindowHandle
+
+# Snap the window to the work-area origin before driving it. Measured on
+# 2026-07-26 (1920x1080 @ 125%): the window is 1022px tall, the work area is
+# 1020px, and as LAUNCHED (centred, Y=53, bottom 1075) the ENTIRE footer row -
+# Create Task / Run Now / Stop / Remove / Save Config / ... - sits UNDER THE
+# TASKBAR. Every footer click landed on MSTaskSwWClass instead, and clicking
+# the taskbar pops a full-screen topmost explorer XAML island that then
+# swallows every later click, in this run and the next. At Y=0 the footer sits
+# at y=990 and clicks land on the button. Not cosmetic: the TargetPath
+# assertion needs the Save Config button.
+$script:workArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+[W.U32]::SetWindowPos($script:hwnd, [IntPtr]::Zero, $script:workArea.X, $script:workArea.Y, 0, 0, 0x0005) | Out-Null  # NOSIZE|NOZORDER
+Start-Sleep -Milliseconds 400
+$wr = $win.Current.BoundingRectangle
+Write-Host "window: $([int]$wr.Width)x$([int]$wr.Height) snapped to ($($script:workArea.X),$($script:workArea.Y)); work area $($script:workArea.Width)x$($script:workArea.Height)"
+if ($wr.Height -gt $script:workArea.Height) {
+    Write-Host "warn:  window is TALLER than the work area ($([int]$wr.Height) > $($script:workArea.Height)) - bottom-row controls may be unreachable on this display"
+}
 [W.U32]::SetForegroundWindow($script:hwnd) | Out-Null
 Start-Sleep -Milliseconds 500
 
@@ -150,6 +170,13 @@ function Click-El([object]$el, [System.IntPtr]$fg = $script:hwnd) {
     [W.U32]::SetForegroundWindow($fg) | Out-Null
     $r = $el.Current.BoundingRectangle
     $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
+    # NEVER click outside the work area. Out there is the taskbar, and a click
+    # on it opens a full-screen topmost shell overlay that silently eats every
+    # subsequent click - one unreachable control turns into a run-wide mystery
+    # (and poisons the NEXT run too). Fail loudly instead.
+    if (-not $script:workArea.Contains($x, $y)) {
+        Fail "HARNESS: click target ($x,$y) for '$($el.Current.Name)' is outside the work area $($script:workArea) - the window does not fit this display, so the control is unreachable"
+    }
     [W.U32]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 120
     [W.U32]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)   # LEFTDOWN
     [W.U32]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)   # LEFTUP
@@ -202,9 +229,11 @@ function Shot([string]$name, [object]$target = $win) {
 }
 # Find an owned dialog window (Advanced / SMTP) by title. Owned windows nest
 # UNDER their owner in the UIA tree, so search descendants, not root children.
-# IsOffscreen filter: both dialogs are OWNED and REUSABLE - nwg HIDES them on
+# Visibility filter: both dialogs are OWNED and REUSABLE - nwg HIDES them on
 # close instead of destroying them - so a hidden one that is still in the UIA
-# tree would otherwise be handed back as though it had opened.
+# tree would otherwise be handed back as though it had opened. Filtered on
+# IsWindowVisible, not UIA IsOffscreen: IsOffscreen means "clipped out of view"
+# and stays FALSE for a hidden window, so it does not answer this question.
 function Find-Dialog([string]$title, [int]$tries = 40) {
     $pidCond = New-Object System.Windows.Automation.PropertyCondition($auto::ProcessIdProperty, $proc.Id)
     $winCond = New-Object System.Windows.Automation.PropertyCondition($auto::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
@@ -213,9 +242,10 @@ function Find-Dialog([string]$title, [int]$tries = 40) {
     for ($t = 0; $t -lt $tries; $t++) {
         $seen = @()
         foreach ($w in $auto::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, $and)) {
-            $off = ''; if ($w.Current.IsOffscreen) { $off = ' [offscreen]' }
+            $vis = [W.U32]::IsWindowVisible([IntPtr]$w.Current.NativeWindowHandle)
+            $off = ''; if (-not $vis) { $off = ' [hidden]' }
             $seen += "'$($w.Current.Name)'$off"
-            if ($w.Current.Name -eq $title -and -not $w.Current.IsOffscreen) { return $w }
+            if ($w.Current.Name -eq $title -and $vis) { return $w }
         }
         Start-Sleep -Milliseconds 150
     }
@@ -242,12 +272,16 @@ function Open-Dialog([object]$btn, [string]$title) {
 }
 # A fixed sleep after Save & Close let the NEXT click land while the dialog was
 # still up (a modal dialog covers the footer buttons). Wait for it to actually go.
-function Wait-DialogGone([object]$dlg, [string]$title) {
+# IsWindowVisible, NOT UIA's IsOffscreen: IsOffscreen means "clipped out of
+# view", not "hidden", and it stayed FALSE for a dialog nwg had already hidden
+# (measured 2026-07-26 - it turned a passing step into a 4s hard failure).
+# IsWindowVisible is the authoritative answer and it is what nwg actually flips.
+function Wait-DialogGone([System.IntPtr]$hwnd, [string]$title) {
     for ($t = 0; $t -lt 40; $t++) {
-        try { if ($dlg.Current.IsOffscreen) { return } } catch { return }  # destroyed = gone
+        if (-not [W.U32]::IsWindowVisible($hwnd)) { return }
         Start-Sleep -Milliseconds 100
     }
-    Fail "dialog '$title' still on screen 4s after Save & Close"
+    Fail "dialog '$title' (hwnd $hwnd) still VISIBLE 4s after Save & Close - the close click did not land"
 }
 
 # =====================  Monitor page  =====================
@@ -369,7 +403,7 @@ $advHwnd = [IntPtr]$adv.Current.NativeWindowHandle
 Shot '03-advanced-dialog' $adv
 $advClose = Require (Find-El 'BUTTON' 'Save*Close*' $adv) "Advanced close button"
 Click-El $advClose $advHwnd
-Wait-DialogGone $adv 'Advanced options'
+Wait-DialogGone $advHwnd 'Advanced options'
 if (-not $win.Current.IsEnabled) { Fail "main window still disabled after closing Advanced dialog" }
 Write-Host "dialog: advanced opened + closed"
 
@@ -380,7 +414,7 @@ $smtpHwnd = [IntPtr]$smtp.Current.NativeWindowHandle
 Shot '04-smtp-dialog' $smtp
 $smtpClose = Require (Find-El 'BUTTON' 'Save*Close*' $smtp) "SMTP close button"
 Click-El $smtpClose $smtpHwnd
-Wait-DialogGone $smtp 'SMTP settings'
+Wait-DialogGone $smtpHwnd 'SMTP settings'
 if (-not $win.Current.IsEnabled) { Fail "main window still disabled after closing SMTP dialog" }
 Write-Host "dialog: smtp opened + closed"
 
