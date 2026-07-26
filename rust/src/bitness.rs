@@ -133,8 +133,14 @@ fn expand_env(s: &str) -> String {
 
 const SERVICES_KEY: &str = r"HKLM\SYSTEM\CurrentControlSet\Services";
 
-/// True unless we are on a 32-bit OS. Extracted so the GUI and the monitor
-/// cannot disagree — the GUI previously hardcoded `true`.
+/// True unless we are on a 32-bit OS.
+///
+/// This is the intended single source of truth, but it is NOT yet the only
+/// one: as of Task 3 three implementations coexist. `monitor.rs:40-41` still
+/// carries its own inline copy (and a case-SENSITIVE `!= "x86"` at that), and
+/// `gui/page_monitor.rs:485` hardcodes `true`. Task 5 replaces the monitor's
+/// copy and Task 6 replaces the GUI's constant; only then can the two actually
+/// not disagree. Until both land, do not read this comment as a guarantee.
 pub fn os_is_64() -> bool {
     os_is_64_from(
         std::env::var("PROCESSOR_ARCHITECTURE").ok().as_deref(),
@@ -804,11 +810,20 @@ mod tests {
     }
 
     #[test]
-    fn reg_output_rejects_a_missing_type_token() {
-        // Kills the starts_with("REG_") check. Without it the type slot eats
-        // the drive letter and the rest parses as a plausible-looking path.
+    fn reg_output_rejects_a_wrong_type_token() {
+        // Kills the starts_with("REG_") check: without it NOTAREGTYPE is eaten
+        // as the type and the REAL path behind it is returned as the value.
         let me = std::env::current_exe().unwrap();
         let out = reg_output(&format!("ImagePath    NOTAREGTYPE    {}", me.display()));
+        assert_eq!(image_path_from_reg_output(&out), None);
+
+        // The genuinely-MISSING-token case D4 cites: with no type token the
+        // path itself lands in the type slot and the arguments become the
+        // "value". Honesty note, same as the ImagePathBackup test: this half
+        // does not uniquely kill the mutant — drop the REG_ check and it still
+        // returns None, because the leftover "-args" fails .exists(). Kept
+        // because it pins the documented failure mode, not because it guards.
+        let out = reg_output(r"ImagePath    C:\x.exe -args");
         assert_eq!(image_path_from_reg_output(&out), None);
     }
 

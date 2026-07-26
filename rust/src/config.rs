@@ -47,9 +47,13 @@ pub struct Config {
     pub config_version: i32,
     pub target_name: String,
     pub target_type: TargetType,
-    /// Full image path of the target, captured when picked from the dropdown
-    /// or resolved from a service's registry ImagePath. Lets bitness be read
-    /// from the PE on disk when the target is not running (the `-w` case).
+    /// Full image path of a **Process** target, captured when it is picked from
+    /// the dropdown. Lets bitness be read from the PE on disk when the target
+    /// is not running (the `-w` case).
+    ///
+    /// Service targets do NOT read this: `bitness::resolve_target_path`'s
+    /// Service arm always re-reads the registry ImagePath instead, so anything
+    /// stored here for a service is inert.
     pub target_path: String,
     pub proc_dump_path: String,
     pub dump_directory: String,
