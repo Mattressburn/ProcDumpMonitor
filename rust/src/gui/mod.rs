@@ -39,7 +39,7 @@ const PAGE_TITLES: [&str; PAGE_COUNT] = [
 ];
 const PAGE_SUBTITLES: [&str; PAGE_COUNT] = [
     "Pick a target, set dump triggers, install the scheduled task \u{2014} all here.",
-    "CCURE application && web logs, plus optional extras.",
+    "CCURE application & web logs, plus optional extras.",
     "Installer artifacts driven by InstallHistory.xml.",
     "Uptime, process and service snapshots.",
     "Version and build information.",
@@ -63,6 +63,13 @@ pub fn run() {
         cfg: RefCell::new(Config::load(&paths::config_path())),
         dirty_scenario: Cell::new(false),
     });
+
+    // The GUI logs its own actions (task install/remove, collections) to the
+    // same procdump.log the monitor uses.
+    {
+        let cfg = state.cfg.borrow();
+        crate::logger::init(paths::log_path(), cfg.max_log_size_mb, cfg.max_log_files);
+    }
 
     let embed = nwg::EmbedResource::load(None).ok();
     let icon = embed.as_ref().and_then(|e| e.icon(1, None));
@@ -99,7 +106,7 @@ pub fn run() {
 
     let mut app_subtitle = nwg::Label::default();
     nwg::Label::builder()
-        .text("Monitor && log collection")
+        .text("Monitor & log collection")
         .position((24, 56))
         .size((200, 18))
         .parent(&window)

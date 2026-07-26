@@ -183,7 +183,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage
         mk_check(parent, "Show stopped services and all processes", (FIELD_X, 74), (330, 22));
 
     // ---- Dump triggers & output -----------------------------------------
-    captions.push(mk_header(parent, "Dump triggers && output", 104, &header_font));
+    captions.push(mk_header(parent, "Dump triggers & output", 104, &header_font));
 
     captions.push(mk_label(parent, "Scenario:", (PAD, 130), (190, 20)));
     let cmb_scenario = mk_combo(parent, (FIELD_X, 132), (300, FIELD_H));
@@ -221,7 +221,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage
     let txt_effective = mk_text(parent, (PAD, 316), (FULL_W, FIELD_H), true);
 
     // ---- Schedule & notifications ----------------------------------------
-    captions.push(mk_header(parent, "Schedule && notifications", 352, &header_font));
+    captions.push(mk_header(parent, "Schedule & notifications", 352, &header_font));
 
     captions.push(mk_label(parent, "Task name:", (PAD, 378), (190, 20)));
     let txt_task_name = mk_text(parent, (FIELD_X, 380), (258, FIELD_H), false);

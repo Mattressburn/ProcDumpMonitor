@@ -79,9 +79,13 @@ pub fn build(owner: &nwg::Window) -> AdvancedDialog {
     let header_font = theme::semibold(15);
     let mut captions: Vec<nwg::Label> = Vec::new();
 
+    // Height allows for the title bar: nwg does NOT call AdjustWindowRectEx
+    // for a parented (owned) window, so the requested size IS the outer
+    // window size and the client area is ~31 logical px shorter. Undersizing
+    // clips the bottom "Save & Close" button off the client area.
     let mut window = nwg::Window::default();
     nwg::Window::builder()
-        .size((560, 520))
+        .size((560, 556))
         .center(true)
         .title("Advanced options")
         .flags(nwg::WindowFlags::WINDOW) // built hidden; shown on demand
@@ -153,7 +157,7 @@ pub fn build(owner: &nwg::Window) -> AdvancedDialog {
     y += 40;
 
     captions.push({
-        let l = mk_label(&window, "Logs && retention", (PAD, y), (500, 20));
+        let l = mk_label(&window, "Logs & retention", (PAD, y), (500, 20));
         l.set_font(Some(&header_font));
         l
     });
@@ -174,7 +178,7 @@ pub fn build(owner: &nwg::Window) -> AdvancedDialog {
     let mut btn_close = nwg::Button::default();
     nwg::Button::builder()
         .text("Save && Close")
-        .position((406, 468))
+        .position((406, 470))
         .size((130, 32))
         .parent(&window)
         .build(&mut btn_close)

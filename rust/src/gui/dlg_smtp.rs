@@ -46,9 +46,12 @@ fn mk_text(parent: &nwg::Window, pos: (i32, i32), size: (i32, i32)) -> nwg::Text
 pub fn build(owner: &nwg::Window) -> SmtpDialog {
     let mut captions: Vec<nwg::Label> = Vec::new();
 
+    // +NC height (see dlg_advanced note): parented windows aren't
+    // AdjustWindowRectEx'd, so pad for the title bar or the bottom button
+    // clips off the client area.
     let mut window = nwg::Window::default();
     nwg::Window::builder()
-        .size((520, 330))
+        .size((520, 366))
         .center(true)
         .title("SMTP settings")
         .flags(nwg::WindowFlags::WINDOW)

@@ -1,9 +1,13 @@
-# GUI end-to-end driver for ProcDump Monitor (Rust build).
-# Launches the exe (build it with PDM_TEST_MANIFEST=1 so no UAC prompt),
-# walks the wizard like a real user - physical mouse clicks + keystrokes -
-# screenshotting every state. nwg controls expose no UIA patterns, so UIA is
-# used only to FIND elements (class+name+rect); input is synthesized.
-# Run under Windows PowerShell 5.1 (powershell.exe) for UIA assemblies.
+# GUI end-to-end driver for ProcDump Monitor (Rust build, mode-based shell).
+# Launches the exe (build it with PDM_TEST_MANIFEST=1 so no UAC prompt), drives
+# it like a real user - physical mouse clicks + keystrokes - screenshotting
+# every page. Navigation is now freely-clickable SIDEBAR labels (not Back/Next).
+# nwg controls expose no UIA patterns, so UIA is used only to FIND elements
+# (class+name+rect); input is synthesized and ambiguous pixels are adjudicated
+# with deterministic window-message probes (CB_GETCOUNT). Also runs a real
+# System Health collection and captures the app log + run transcript.
+# Run under Windows PowerShell 5.1 (powershell.exe) for UIA assemblies. The
+# machine's mouse/keyboard must be idle during the run.
 #
 #   powershell -File scripts\gui-e2e.ps1 -Exe rust\target\debug\ProcDumpMonitor.exe -OutDir out\shots
 #
@@ -48,22 +52,42 @@ for ($i = 0; $i -lt 60 -and -not $win; $i++) {
 }
 if (-not $win) { Fail "main window not found within 15s" }
 Write-Host "window: '$($win.Current.Name)'"
-$hwnd = [IntPtr]$win.Current.NativeWindowHandle
-[W.U32]::SetForegroundWindow($hwnd) | Out-Null
+$script:hwnd = [IntPtr]$win.Current.NativeWindowHandle
+[W.U32]::SetForegroundWindow($script:hwnd) | Out-Null
 Start-Sleep -Milliseconds 500
 
-function Find-El([string]$class, [string]$namePattern) {
-    # Match by Win32 class name + window text; skip hidden wizard pages' controls.
-    foreach ($el in $win.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+# --- element finders --------------------------------------------------------
+function All-Els([object]$root) {
+    $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+}
+function Find-El([string]$class, [string]$namePattern, [object]$root = $win) {
+    foreach ($el in All-Els $root) {
         if (-not $el.Current.IsOffscreen -and
-            ($class -eq '' -or $el.Current.ClassName -eq $class) -and
+            ($class -eq '' -or $el.Current.ClassName -ieq $class) -and
             $el.Current.Name -like $namePattern) { return $el }
     }
     return $null
 }
+# Sidebar nav labels share their text with content titles; disambiguate by the
+# small WINDOW-RELATIVE X of the sidebar column (BoundingRectangle.X is an
+# absolute screen coord, so subtract the window's left edge).
+function Find-Nav([string]$name) {
+    $winX = $win.Current.BoundingRectangle.X
+    foreach ($el in All-Els $win) {
+        # -ceq (case-SENSITIVE): the "MONITOR" group caption would otherwise
+        # match "Monitor" under PowerShell's default case-insensitive -eq and
+        # shadow the real (clickable) nav item.
+        if ($el.Current.ClassName -ieq 'STATIC' -and $el.Current.Name -ceq $name -and
+            -not $el.Current.IsOffscreen -and ($el.Current.BoundingRectangle.X - $winX) -lt 260) { return $el }
+    }
+    return $null
+}
 function Require([object]$el, [string]$what) { if (-not $el) { Fail "not found: $what" }; return $el }
-function Click-El([object]$el) {
-    [W.U32]::SetForegroundWindow($hwnd) | Out-Null
+# $fg = top-level window hwnd to bring forward before clicking. For a modal
+# dialog this MUST be the dialog (the main window is disabled and would cover
+# the dialog if forced forward). Defaults to the main window.
+function Click-El([object]$el, [System.IntPtr]$fg = $script:hwnd) {
+    [W.U32]::SetForegroundWindow($fg) | Out-Null
     $r = $el.Current.BoundingRectangle
     $x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
     [W.U32]::SetCursorPos($x, $y) | Out-Null; Start-Sleep -Milliseconds 120
@@ -73,25 +97,41 @@ function Click-El([object]$el) {
 }
 function Type-Text([object]$el, [string]$text) {
     Click-El $el
-    [System.Windows.Forms.SendKeys]::SendWait("^a{DEL}$text")
+    [System.Windows.Forms.SendKeys]::SendWait("^a{DEL}")
+    # Escape SendKeys metacharacters in file paths etc.
+    $esc = $text -replace '([+^%~(){}\[\]])', '{$1}'
+    [System.Windows.Forms.SendKeys]::SendWait($esc)
     Start-Sleep -Milliseconds 300
 }
-# Block until the GUI thread has drained its queue (finished any synchronous
-# handler such as the service enumeration) or 5s elapses. WM_NULL is a no-op the
-# thread only answers once it's idle, so a completed round-trip == UI settled --
-# more reliable than a fixed sleep that races a mid-flight repaint.
 function Wait-Idle {
     $res = [System.UIntPtr]::Zero
-    # 0x0000 = WM_NULL; flags 0x0002 = SMTO_ABORTIFHUNG.
     [W.U32]::SendMessageTimeout($script:hwnd, 0x0000, [UIntPtr]::Zero, [IntPtr]::Zero, 0x0002, 5000, [ref]$res) | Out-Null
 }
-function Shot([string]$name) {
-    # Insurance on every capture: bring the window forward and let its paint
-    # settle before grabbing pixels, so no shot races a repaint or grabs black.
-    [W.U32]::SetForegroundWindow($script:hwnd) | Out-Null
+# CB_GETCOUNT (0x0146): deterministic item count of a combo, regardless of
+# whether it's dropped open (a closed combo always LOOKS empty in a screenshot).
+function Combo-Count([object]$combo) {
+    $res = [System.UIntPtr]::Zero
+    $h = [IntPtr]$combo.Current.NativeWindowHandle
+    [W.U32]::SendMessageTimeout($h, 0x0146, [UIntPtr]::Zero, [IntPtr]::Zero, 0x0002, 3000, [ref]$res) | Out-Null
+    return [int]$res.ToUInt32()
+}
+# Topmost visible combobox on the current page (the target combo sits above the
+# scenario / dump-type combos).
+function Top-Combo {
+    $best = $null; $bestY = [double]::MaxValue
+    foreach ($el in All-Els $win) {
+        if ($el.Current.ClassName -ieq 'COMBOBOX' -and -not $el.Current.IsOffscreen) {
+            $y = $el.Current.BoundingRectangle.Y
+            if ($y -lt $bestY) { $bestY = $y; $best = $el }
+        }
+    }
+    return $best
+}
+function Shot([string]$name, [object]$target = $win) {
+    [W.U32]::SetForegroundWindow([IntPtr]$target.Current.NativeWindowHandle) | Out-Null
     Wait-Idle
     Start-Sleep -Milliseconds 250
-    $r = $win.Current.BoundingRectangle
+    $r = $target.Current.BoundingRectangle
     $bmp = New-Object System.Drawing.Bitmap([int]$r.Width, [int]$r.Height)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.CopyFromScreen([int]$r.X, [int]$r.Y, 0, 0, $bmp.Size)
@@ -100,41 +140,150 @@ function Shot([string]$name) {
     $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
     Write-Host "shot:  $path"
 }
-
-$pages = @('target','procdump','task','notify','review','about')
-$next  = Require (Find-El 'Button' 'Next*')  "Next button"
-$back  = Require (Find-El 'Button' '*Back*') "Back button"
-
-# --- Page 1: interact like a user ---
-Shot '01-target'
-$edit = Require (Find-El 'Edit' '*') "process-name edit"
-Type-Text $edit 'notepad'; Write-Host "type:  'notepad' into process name"
-$show = Find-El 'Button' '*Show all*'
-if ($show) { Click-El $show; Wait-Idle; Write-Host "click: show-all checkbox" } else { Write-Host "warn:  show-all checkbox not found" }
-$refresh = Find-El 'Button' '*efresh*'
-if ($refresh) { Click-El $refresh; Wait-Idle; Write-Host "click: refresh services" } else { Write-Host "warn:  refresh button not found" }
-Shot '01-target-filled'
-if ($back.Current.IsEnabled) { Fail "Back enabled on page 1" }
-
-# --- Forward walk through all pages ---
-for ($p = 1; $p -lt $pages.Count; $p++) {
-    if (-not $next.Current.IsEnabled) { Fail "Next disabled before reaching page $($p+1)" }
-    Click-El $next; Write-Host "click: Next -> $($pages[$p])"
-    Start-Sleep -Milliseconds 400
-    Shot ('{0:d2}-{1}' -f ($p + 1), $pages[$p])
+# Find an owned dialog window (Advanced / SMTP) by title. Owned windows nest
+# UNDER their owner in the UIA tree, so search descendants, not root children.
+function Find-Dialog([string]$title) {
+    $pidCond = New-Object System.Windows.Automation.PropertyCondition($auto::ProcessIdProperty, $proc.Id)
+    $winCond = New-Object System.Windows.Automation.PropertyCondition($auto::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
+    $and = New-Object System.Windows.Automation.AndCondition($pidCond, $winCond)
+    for ($t = 0; $t -lt 20; $t++) {
+        foreach ($w in $auto::RootElement.FindAll([System.Windows.Automation.TreeScope]::Descendants, $and)) {
+            if ($w.Current.Name -eq $title) { return $w }
+        }
+        Start-Sleep -Milliseconds 150
+    }
+    return $null
 }
-if ($next.Current.IsEnabled) { Write-Host "warn:  Next still enabled on last page" }
 
-# --- Reverse walk back to page 1 ---
-for ($p = $pages.Count - 2; $p -ge 0; $p--) {
-    if (-not $back.Current.IsEnabled) { Fail "Back disabled during reverse walk at $($pages[$p])" }
-    Click-El $back; Write-Host "click: Back -> $($pages[$p])"
+# =====================  Monitor page  =====================
+Shot '01-monitor'
+
+# Deterministic: the combined target dropdown is populated (running services).
+$combo = Require (Top-Combo) "target combo"
+$c0 = Combo-Count $combo
+Write-Host "probe: target combo has $c0 running-service entries"
+if ($c0 -lt 1) { Fail "target combo empty (expected running services)" }
+
+# "Show stopped services and all processes" must ADD entries (stopped svcs +
+# processes). Adjudicated by count, not pixels.
+$showall = Require (Find-El 'BUTTON' '*all processes*') "show-all checkbox"
+Click-El $showall; Wait-Idle
+$c1 = Combo-Count $combo
+Write-Host "probe: after show-all, target combo has $c1 entries"
+if ($c1 -le $c0) { Fail "show-all did not grow the target list ($c0 -> $c1)" }
+Shot '02-monitor-showall'
+
+# Refresh keeps it populated.
+$refresh = Require (Find-El 'BUTTON' 'Refresh') "refresh button"
+Click-El $refresh; Wait-Idle
+if ((Combo-Count $combo) -lt 1) { Fail "target combo empty after refresh" }
+Write-Host "click: refresh services"
+
+# Live status rows are present on the Monitor page. Match the status glyphs
+# (the subtitle also contains "scheduled task", so key off the leading marker).
+function Find-Status {
+    foreach ($el in All-Els $win) {
+        if ($el.Current.ClassName -ieq 'STATIC' -and -not $el.Current.IsOffscreen -and
+            ($el.Current.Name -like "$([char]0x2713)*" -or $el.Current.Name -like "$([char]0x25CB)*") -and
+            $el.Current.Name -like '*cheduled task*') { return $el }
+    }
+    return $null
 }
-Shot '07-back-target'
-if ($back.Current.IsEnabled) { Fail "Back enabled after returning to page 1" }
+$stTask = Require (Find-Status) "status: task row"
+Write-Host "status: '$($stTask.Current.Name)'"
+
+# --- Advanced dialog: open, screenshot, close ---
+$advBtn = Require (Find-El 'BUTTON' 'Advanced*') "Advanced button"
+Click-El $advBtn; Start-Sleep -Milliseconds 500
+$adv = Require (Find-Dialog 'Advanced options') "Advanced dialog"
+$advHwnd = [IntPtr]$adv.Current.NativeWindowHandle
+Shot '03-advanced-dialog' $adv
+$advClose = Require (Find-El 'BUTTON' 'Save*Close*' $adv) "Advanced close button"
+Click-El $advClose $advHwnd; Start-Sleep -Milliseconds 400
+if (-not $win.Current.IsEnabled) { Fail "main window still disabled after closing Advanced dialog" }
+Write-Host "dialog: advanced opened + closed"
+
+# --- SMTP dialog: open, screenshot, close ---
+$smtpBtn = Require (Find-El 'BUTTON' 'SMTP*') "SMTP button"
+Click-El $smtpBtn; Start-Sleep -Milliseconds 500
+$smtp = Require (Find-Dialog 'SMTP settings') "SMTP dialog"
+$smtpHwnd = [IntPtr]$smtp.Current.NativeWindowHandle
+Shot '04-smtp-dialog' $smtp
+$smtpClose = Require (Find-El 'BUTTON' 'Save*Close*' $smtp) "SMTP close button"
+Click-El $smtpClose $smtpHwnd; Start-Sleep -Milliseconds 400
+if (-not $win.Current.IsEnabled) { Fail "main window still disabled after closing SMTP dialog" }
+Write-Host "dialog: smtp opened + closed"
+
+# =====================  Collector pages  =====================
+$dc = Require (Find-Nav 'Data Collection') "nav: Data Collection"
+Click-El $dc; Wait-Idle; Shot '05-datacollection'
+Write-Host "nav:   Data Collection"
+
+$il = Require (Find-Nav 'Install Logs') "nav: Install Logs"
+Click-El $il; Wait-Idle; Shot '06-installlogs'
+Write-Host "nav:   Install Logs"
+
+$sh = Require (Find-Nav 'System Health') "nav: System Health"
+Click-El $sh; Wait-Idle; Shot '07-systemhealth'
+Write-Host "nav:   System Health"
+
+# Run a REAL System Health collection into OutDir and wait for it to finish.
+# The save-path box is the LOWEST edit on the page (below the two pattern
+# boxes); pick the max-Y onscreen edit deterministically.
+$saveBox = $null; $maxY = -1
+foreach ($el in All-Els $win) {
+    if ($el.Current.ClassName -ieq 'EDIT' -and -not $el.Current.IsOffscreen) {
+        $y = $el.Current.BoundingRectangle.Y
+        if ($y -gt $maxY) { $maxY = $y; $saveBox = $el }
+    }
+}
+if (-not $saveBox) { Fail "save-path box not found on System Health page" }
+Type-Text $saveBox $OutDir; Write-Host "type:  save path -> OutDir"
+$collectBtn = Require (Find-El 'BUTTON' 'Collect system health') "collect button"
+Click-El $collectBtn; Write-Host "click: collect system health"
+
+# Poll the status label until Done/FAILED (or 60s). Text via UIA Name.
+$done = $false
+for ($i = 0; $i -lt 120 -and -not $done; $i++) {
+    Start-Sleep -Milliseconds 500
+    $st = Find-El 'STATIC' 'Status:*'
+    if ($st -and ($st.Current.Name -like '*Done*' -or $st.Current.Name -like '*FAILED*')) {
+        Write-Host "collect: $($st.Current.Name)"
+        if ($st.Current.Name -like '*FAILED*') { Fail "system health collection reported FAILED" }
+        $done = $true
+    }
+}
+if (-not $done) { Fail "system health collection did not finish within 60s" }
+Shot '08-systemhealth-done'
+
+$about = Require (Find-Nav 'About') "nav: About"
+Click-El $about; Wait-Idle; Shot '09-about'
+Write-Host "nav:   About"
+
+# Back to Monitor: status panel must still render.
+$mon = Require (Find-Nav 'Monitor') "nav: Monitor"
+Click-El $mon; Wait-Idle; Shot '10-back-monitor'
+if (-not (Find-Status)) { Fail "status panel missing after returning to Monitor" }
+Write-Host "nav:   Monitor (status panel intact)"
+
+# =====================  Capture logs  =====================
+$logDst = Join-Path $OutDir 'logs'
+New-Item -ItemType Directory -Force $logDst | Out-Null
+$appLog = Join-Path (Split-Path $Exe) 'Logs\procdump.log'
+if (Test-Path $appLog) { Copy-Item $appLog $logDst -Force; Write-Host "log:   copied app log" }
+# Newest run folder produced by the collection (OutDir\YYYY-MM-DD\Run_*).
+$run = Get-ChildItem -Path $OutDir -Directory -Recurse -Filter 'Run_*' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($run) {
+    Copy-Item (Join-Path $run.FullName 'Run_Transcript.txt') $logDst -Force -ErrorAction SilentlyContinue
+    Copy-Item (Join-Path $run.FullName 'Collection_Summary.txt') $logDst -Force -ErrorAction SilentlyContinue
+    Write-Host "log:   captured collection transcript + summary from $($run.Name)"
+} else {
+    Write-Host "warn:  no collection run folder found under OutDir"
+}
 
 Write-Host "close: app"
 if (-not $proc.HasExited) { $proc.CloseMainWindow() | Out-Null; Start-Sleep -Milliseconds 800 }
 if (-not $proc.HasExited) { $proc.Kill() }
-Write-Host "OK: e2e walk complete, screenshots in $OutDir"
+Write-Host "OK: e2e walk complete, screenshots + logs in $OutDir"
 exit 0
