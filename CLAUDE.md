@@ -71,6 +71,12 @@ BUTTON/checkbox captions need `&&` to render one `&`.
   before registration keep stale pixels forever.
 - **Console children stall the pump:** any `Command` spawn from the GUI must set
   `CREATE_NO_WINDOW` (see `services.rs` / `task.rs`) or the wizard freezes.
+- **ComboBox height IS the dropdown height:** Win32 uses a combobox's
+  `CreateWindowEx` height for the control *with its list dropped down* (the closed
+  control always renders one item tall), and nwg passes `size` straight through.
+  Building one at the 26px field height yields a list with no usable rows — it
+  reads as "scrolling is broken". Give any long-list combo ~300 logical px
+  (`page_monitor.rs` target combo); short preset combos are fine at 26.
 - All GUI coordinates are LOGICAL px — nwg's `high-dpi` feature scales positions,
   sizes, and fonts. Never multiply by `scale_factor()` except in raw GDI paint paths.
 - The GUI design system (grid, colors, fonts) is specified in
