@@ -697,22 +697,30 @@ impl MonitorPage {
             // page), so pinning the hint here would clobber the CrossFire
             // default on every fresh install and kill the feature silently.
             //
-            // ponytail: `target_selection` matches on name only, while the
-            // lookup above also matches the TYPE. found==false therefore means
-            // any surviving name match is the WRONG type, and selecting it
-            // would make the next save() infer TargetType::Process for a
-            // Service (config.rs:37 — infer_target_type only answers Service
-            // when the picked ROW is a service). Unreachable in practice:
-            // Toolhelp image names carry `.exe`, service short names do not.
-            // Ceiling accepted rather than pushing the type into the pure rule
-            // for a case that cannot occur; upgrade path is a `want_service`
-            // parameter on target_selection if a collision is ever observed.
+            // `target_selection` matches on name only, while the lookup above
+            // also matches the TYPE — deliberate, do NOT add a want_service
+            // filter. found==false means any surviving name match is the
+            // opposite type, and selecting it is the BETTER outcome: a saved
+            // Process target whose name matches a service row lands on that row,
+            // so effective_target() infers Service and the config self-corrects.
+            // A filter would leave it on the hint row and keep the wrong type.
             //
-            // ponytail: no unit test reaches this branch itself (it needs live
-            // nwg controls) — only target_selection under it is covered, so the
-            // load-order and the guard width are guarded by review. Upgrade
-            // path: assert the combo's selected text in scripts/gui-e2e.ps1 on
-            // a host where a preferred target runs (Task 8 owns that script).
+            // ponytail: the reverse (a saved Service target with no service row)
+            // still degrades to Process on the next save(), and NO filter here
+            // can fix that — with the hint row selected, effective_target():501
+            // drops it (`is_service: false`), so infer_target_type sees None and
+            // answers Process either way. Root cause is effective_target():497
+            // deriving the type from the PICKED ROW instead of cfg.target_type;
+            // pre-existing (a blank combo did the same before this task) and out
+            // of Task 7's scope. Fix it there, not here.
+            //
+            // ponytail: no unit test reaches this branch AT ALL — it needs live
+            // nwg controls, so reverting the guard to its old narrow form leaves
+            // the whole suite green (demonstrated in review round 2). The tests
+            // below cover target_selection only. Guard width and load-order are
+            // held by review alone; the only mechanical check possible is an
+            // e2e assertion on the combo's selected text (Task 8 owns that
+            // script).
             let i = target_selection(&self.entries.borrow(), Some(&cfg.target_name));
             self.cmb_target.set_selection(Some(i));
         }
@@ -1297,12 +1305,18 @@ mod tests {
 
     #[test]
     fn a_saved_target_missing_from_the_list_never_leaves_a_preferred_row_selected() {
-        // load()'s `!found` branch (page_monitor.rs:682): a saved target that
+        // The rule load()'s `!found` branch relies on: a saved target that
         // isn't running is stashed in manual_target and WINS in
         // effective_target(), so if this fell through to the PREFERRED path the
         // picker would show CrossFire while the app dumped the saved target.
         // Reachable on a normal C-CURE launch: saved target stopped, CrossFire
         // running.
+        //
+        // HONEST SCOPE: this documents that rule, it does NOT guard the call
+        // site. Narrowing load()'s guard back to `&& target_name.is_empty()`
+        // leaves this test — and the whole suite — green (review round 2), and
+        // the mutant it kills is already killed by the test below it. Only an
+        // e2e assertion can catch a regression of the guard itself.
         let e = crossfire_entries();
         assert!(e.iter().any(|x| x.name == CF_SERVER), "fixture must offer the default");
         assert_eq!(target_selection(&e, Some("SomeStoppedService")), 0);
