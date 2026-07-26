@@ -63,7 +63,12 @@ pub fn run(mut cfg: Config) {
         h.disk_space_low = false;
         logger::log("Monitor", "-- Cycle start --");
 
-        // Before run_procdump_cycle, which reads cfg.proc_dump_path.
+        // Before run_procdump_cycle, which reads cfg.proc_dump_path -- and that
+        // call BLOCKS for the whole -w wait. So a target that first appears
+        // mid-cycle is not resolved until the NEXT cycle: cycle 1 still launches
+        // whatever was chosen here. Bounded to one wrong dump by max_dumps, and
+        // not fixable while the child blocks; a non-blocking redesign is a worse
+        // trade than one useless dump.
         for line in bitness_step(&mut resolved, &mut cfg, &pd_dir, os64, bitness::resolve) {
             logger::log("Monitor", &line);
         }
@@ -117,8 +122,8 @@ pub fn run(mut cfg: Config) {
 /// decision is testable without a running monitor.
 ///
 /// `cached` is both the cache and the "have we ever resolved" flag:
-/// `None` = never, `Some(Unknown)` = tried and failed (retry), `Some(b)` =
-/// settled (stop). It is an Option and not a bare `Bitness` because a run where
+/// `None` = never, `Some(Unknown)` = unsettled (retry), `Some(b)` = settled
+/// (stop). It is an Option and not a bare `Bitness` because a run where
 /// the target never starts AND the configured path already equals the chosen
 /// default would otherwise log nothing about bitness at all — a regression
 /// against the old unconditional startup line.
@@ -127,9 +132,10 @@ pub fn run(mut cfg: Config) {
 /// workflow that is rare — with -w the ProcDump child blocks until the target
 /// appears, so a "cycle" is as long as the target's life. Ceiling: with
 /// `restart_delay_seconds == 0` AND a ProcDump that exits instantly (missing
-/// binary) the pre-existing tight spin now also spawns one reg.exe per
-/// iteration for Service targets. Upgrade path: a min-interval on the retry,
-/// if that pathology ever shows up in the field.
+/// binary) the pre-existing tight spin now also carries one resolve per
+/// iteration — a reg.exe spawn for a Service target, a Toolhelp snapshot for a
+/// Process target that never starts. Upgrade path: a min-interval on the
+/// retry, if that pathology ever shows up in the field.
 fn bitness_step(
     cached: &mut Option<bitness::Bitness>,
     cfg: &mut Config,
@@ -144,18 +150,24 @@ fn bitness_step(
     }
     let first = cached.is_none();
     let (b, source) = resolve(cfg);
-    *cached = Some(b);
-
     let choice = bitness::select_binary(b, pd_dir, os64);
+
+    // Settle ONLY when a binary was actually chosen. A known bitness with
+    // neither procdump present (empty `actual`) is an answer we cannot act on,
+    // and "copy procdump onto the box" is exactly what the warning tells the
+    // tech to do — settling here would ignore the binary they then copy in.
+    let settling = b != bitness::Bitness::Unknown && choice.actual.exists();
+    *cached = Some(if settling { b } else { bitness::Bitness::Unknown });
+
     // Compare the chosen BINARY PATH, not the source string: the source can
     // change while the selected binary does not.
     let switching = choice.actual.exists() && choice.actual != Path::new(&cfg.proc_dump_path);
 
-    // This runs every cycle while Unknown; a line per cycle would fill the log.
-    // The three arms that may speak: the first attempt, an actual switch, and
-    // the Unknown -> known transition (which fires at most once — after it,
-    // `cached` is settled and every later cycle returns above).
-    if !first && !switching && b == bitness::Bitness::Unknown {
+    // This runs every cycle while unsettled; a line per cycle would fill the
+    // log. Three arms may speak: the first attempt, an actual switch, and the
+    // cycle the cache settles on (at most once — after it, every later cycle
+    // returns above).
+    if !first && !switching && !settling {
         return Vec::new();
     }
 
@@ -453,6 +465,38 @@ mod tests {
             "Bitness WARNING: procdump.exe not found - falling back to procdump64.exe.",
             "Bitness: 32-bit process -> procdump64.exe (fallback) (via PE header)",
         ]);
+    }
+
+    #[test]
+    fn a_known_bitness_with_no_binary_present_does_not_settle_the_cache() {
+        // Arming the task before copying ProcDump onto the box is a plausible
+        // field sequence — the missing-binary warning tells the tech to do
+        // exactly that. A known bitness is useless without a binary to apply it
+        // to, so the cache must stay open until one appears.
+        let d = pd_dir(&[]);
+        let mut cfg = cfg_at(&d, "procdump64.exe");
+        let mut cached = None;
+
+        let l1 = bitness_step(&mut cached, &mut cfg, &d, true, x86);
+        assert_eq!(cached, Some(Bitness::Unknown), "settled on an answer it cannot act on");
+        assert_eq!(l1, [
+            "Bitness WARNING: Neither procdump.exe nor procdump64.exe found in the ProcDump directory.",
+            "Bitness: No ProcDump binary found (via PE header)",
+        ]);
+        // ...and it must not then flood: known bitness, still no binary.
+        assert_eq!(bitness_step(&mut cached, &mut cfg, &d, true, x86), Vec::<String>::new());
+
+        // The tech copies ProcDump in.
+        std::fs::write(d.join("procdump.exe"), b"x").unwrap();
+        std::fs::write(d.join("procdump64.exe"), b"x").unwrap();
+
+        let l3 = bitness_step(&mut cached, &mut cfg, &d, true, x86);
+        assert_eq!(cached, Some(Bitness::X86), "did not settle once a binary existed");
+        assert_eq!(cfg.proc_dump_path, d.join("procdump.exe").display().to_string(),
+            "the binary that appeared later was never picked up");
+        assert_eq!(l3, [format!("Bitness: 32-bit process -> procdump.exe (via PE header) -> {}",
+            d.join("procdump.exe").display())]);
+        assert_eq!(bitness_step(&mut cached, &mut cfg, &d, true, x86), Vec::<String>::new());
     }
 
     #[test]
