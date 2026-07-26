@@ -17,17 +17,45 @@ const COMIMAGE_FLAGS_32BITPREFERRED: u32 = 0x0002_0000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bitness { Unknown, X86, X64 }
 
-/// Read `IMAGE_FILE_HEADER.Machine` from a PE on disk.
+/// `pe_machine_of` by path. TEST-ONLY: production goes through
+/// `bitness_from_pe`, which opens once and drives both walks off one handle.
+/// Kept so the tests can pin the machine word on its own.
+#[cfg(test)]
+fn pe_machine(path: &Path) -> Option<u16> {
+    pe_machine_of(&mut open_pe(path)?)
+}
+
+/// The only place this module opens a PE.
+///
+/// `bitness_from_pe` calls it ONCE and hands the same handle to both walks —
+/// see that function for why a second open was a production defect. The
+/// test-only counter is how `bitness_from_pe_opens_the_file_exactly_once`
+/// proves it; thread-local because cargo runs tests in parallel.
+fn open_pe(path: &Path) -> Option<std::fs::File> {
+    #[cfg(test)]
+    PE_OPENS.with(|c| c.set(c.get() + 1));
+    std::fs::File::open(path).ok()
+}
+
+#[cfg(test)]
+thread_local! {
+    static PE_OPENS: std::cell::Cell<usize> = std::cell::Cell::new(0);
+}
+
+/// Read `IMAGE_FILE_HEADER.Machine` from an open PE.
 ///
 /// This is what makes `-w` (wait-for-process) correct: it needs no running
 /// process, so a target that has never started still resolves.
 ///
 /// Layout: `e_lfanew` is a LE u32 at 0x3C pointing at the PE signature
 /// "PE\0\0"; `IMAGE_FILE_HEADER` follows it and opens with a LE u16 Machine.
-pub fn pe_machine(path: &Path) -> Option<u16> {
+///
+/// Takes an open handle rather than a path so `bitness_from_pe` can share one
+/// with `cor20_flags_of`. That is safe because every read here seeks absolutely
+/// (`SeekFrom::Start`): this walk neither depends on the incoming file position
+/// nor requires any particular one on the way out.
+fn pe_machine_of(f: &mut std::fs::File) -> Option<u16> {
     use std::io::{Read, Seek, SeekFrom};
-
-    let mut f = std::fs::File::open(path).ok()?;
 
     let mut lfanew = [0u8; 4];
     f.seek(SeekFrom::Start(0x3C)).ok()?;
@@ -86,6 +114,14 @@ fn rva_to_file_offset(
     None
 }
 
+/// `cor20_flags_of` by path. TEST-ONLY: production goes through
+/// `bitness_from_pe`, which reuses the handle `pe_machine_of` already holds.
+/// Kept so the tests can pin the walk's verdict on its own.
+#[cfg(test)]
+fn cor20_flags(path: &Path) -> Option<u32> {
+    cor20_flags_of(&mut open_pe(path)?)
+}
+
 /// `IMAGE_COR20_HEADER.Flags` for a managed image, or None when the file is
 /// unmanaged, truncated, or malformed anywhere along the walk.
 ///
@@ -94,18 +130,21 @@ fn rva_to_file_offset(
 /// fixed-size `read_exact` into a fixed-size array (so no slicing can be out of
 /// range), every offset is `checked_add`/`checked_mul`, and every fallible step
 /// returns None. There is no indexing by a value read from the file.
-fn cor20_flags(path: &Path) -> Option<u32> {
-    let mut f = std::fs::File::open(path).ok()?;
-
+///
+/// Takes an open handle rather than a path so `bitness_from_pe` can share one
+/// with `pe_machine_of`. Safe for the same reason: every read goes through
+/// `read_at`, which seeks absolutely, so the incoming file position is
+/// irrelevant.
+fn cor20_flags_of(f: &mut std::fs::File) -> Option<u32> {
     let mut lfanew = [0u8; 4];
-    read_at(&mut f, 0x3C, &mut lfanew)?;
+    read_at(f, 0x3C, &mut lfanew)?;
     let pe_off = u32::from_le_bytes(lfanew) as u64;
 
     // "PE\0\0"(4) Machine(2) NumberOfSections(2) TimeDateStamp(4)
     // PointerToSymbolTable(4) NumberOfSymbols(4) SizeOfOptionalHeader(2)
     // Characteristics(2) = 24 bytes.
     let mut coff = [0u8; 24];
-    read_at(&mut f, pe_off, &mut coff)?;
+    read_at(f, pe_off, &mut coff)?;
     if &coff[0..4] != b"PE\0\0" {
         return None;
     }
@@ -116,7 +155,7 @@ fn cor20_flags(path: &Path) -> Option<u32> {
     // The optional-header magic decides where NumberOfRvaAndSizes and the data
     // directories sit. Anything else is not an image we will guess about.
     let mut magic = [0u8; 2];
-    read_at(&mut f, opt_start, &mut magic)?;
+    read_at(f, opt_start, &mut magic)?;
     let (n_rva_off, dirs_off) = match u16::from_le_bytes(magic) {
         0x10B => (92u64, 96u64),  // PE32
         0x20B => (108u64, 112u64), // PE32+
@@ -127,24 +166,24 @@ fn cor20_flags(path: &Path) -> Option<u32> {
     // 15 directories has no such entry, and reading it anyway would land in the
     // section table and hand back a garbage RVA that might even resolve.
     let mut n_rva = [0u8; 4];
-    read_at(&mut f, opt_start.checked_add(n_rva_off)?, &mut n_rva)?;
+    read_at(f, opt_start.checked_add(n_rva_off)?, &mut n_rva)?;
     if u32::from_le_bytes(n_rva) <= 14 {
         return None;
     }
 
     let mut dir = [0u8; 8]; // RVA(4) + Size(4)
-    read_at(&mut f, opt_start.checked_add(dirs_off)?.checked_add(14 * 8)?, &mut dir)?;
+    read_at(f, opt_start.checked_add(dirs_off)?.checked_add(14 * 8)?, &mut dir)?;
     let rva = u32::from_le_bytes([dir[0], dir[1], dir[2], dir[3]]) as u64;
     if rva == 0 {
         return None; // no CLI header — an ordinary native binary
     }
 
-    let at = rva_to_file_offset(&mut f, opt_start.checked_add(opt_size)?, n_sections, rva)?;
+    let at = rva_to_file_offset(f, opt_start.checked_add(opt_size)?, n_sections, rva)?;
 
     // COR20: cb(4) MajorRuntimeVersion(2) MinorRuntimeVersion(2)
     //        MetaData RVA(4)+Size(4) Flags(4)  -> Flags is at +16.
     let mut flags = [0u8; 4];
-    read_at(&mut f, at.checked_add(16)?, &mut flags)?;
+    read_at(f, at.checked_add(16)?, &mut flags)?;
     Some(u32::from_le_bytes(flags))
 }
 
@@ -171,12 +210,23 @@ fn cor20_flags(path: &Path) -> Option<u32> {
 /// ProcDump binary, but it means the two are indistinguishable here — do not
 /// assert anything stronger.
 pub fn bitness_from_pe(path: &Path) -> Bitness {
-    match pe_machine(path) {
-        Some(IMAGE_FILE_MACHINE_I386) => match cor20_flags(path) {
+    // ONE open, BOTH walks — do not split this back into two `&Path` calls.
+    // With a separate open per walk, an I/O blip between them (AV scan, sharing
+    // violation, network-path hiccup) made the COR20 walk return None after the
+    // machine word had already read I386 — classifying an AnyCPU assembly X86.
+    // `monitor.rs`'s bitness cache settles on any non-Unknown answer, so that
+    // one blip pinned a 64-bit target to 32-bit procdump.exe — which cannot
+    // attach to it at all — for the monitor's whole lifetime. Fused, a failed
+    // open yields Unknown, which the cache refuses to settle on and retries.
+    let Some(mut f) = open_pe(path) else {
+        return Bitness::Unknown;
+    };
+    match pe_machine_of(&mut f) {
+        Some(IMAGE_FILE_MACHINE_I386) => match cor20_flags_of(&mut f) {
             // Managed and neither flag set: AnyCPU -> runs 64-bit.
-            Some(f)
-                if f & COMIMAGE_FLAGS_32BITREQUIRED == 0
-                    && f & COMIMAGE_FLAGS_32BITPREFERRED == 0 =>
+            Some(fl)
+                if fl & COMIMAGE_FLAGS_32BITREQUIRED == 0
+                    && fl & COMIMAGE_FLAGS_32BITPREFERRED == 0 =>
             {
                 Bitness::X64
             }
@@ -910,6 +960,40 @@ mod tests {
             let _ = std::fs::remove_file(&p);
             assert_eq!(got, want, "flags={flags:#x} ({why})");
         }
+    }
+
+    #[test]
+    fn bitness_from_pe_opens_the_file_exactly_once() {
+        // THE regression guard for the fuse. Two opens meant a transient I/O
+        // failure on the second one classified an AnyCPU assembly X86, and
+        // monitor.rs settles its cache on any non-Unknown answer — so the
+        // target stayed pinned to 32-bit procdump.exe, which cannot attach to
+        // it, until someone restarted the scheduled task.
+        //
+        // A managed AnyCPU PE32 is the fixture on purpose: it is the ONLY shape
+        // that drives both walks. The X64 assertion below is what makes the
+        // count non-vacuous — a walk that bailed at its first read would also
+        // report one open. Split the open back in two and the delta reads 2.
+        //
+        // PE_OPENS is thread-local because cargo runs tests in parallel; a
+        // global counter would be raced by every other test in this module.
+        let p = tmp_pe("oneopen", &synth_pe(0x014C, 0x10B, 16, 0x1000, ILONLY));
+        let before = PE_OPENS.with(|c| c.get());
+        let got = bitness_from_pe(&p);
+        let after = PE_OPENS.with(|c| c.get());
+        let _ = std::fs::remove_file(&p);
+        assert_eq!(got, Bitness::X64, "precondition: the COR20 walk really ran");
+        assert_eq!(after - before, 1, "the COR20 walk must reuse the machine-word handle");
+
+        // ...and the by-path wrappers still open once each, so the delta above
+        // is a real count and not a counter that stopped incrementing.
+        let p = tmp_pe("oneopen2", &synth_pe(0x014C, 0x10B, 16, 0x1000, ILONLY));
+        let before = PE_OPENS.with(|c| c.get());
+        let _ = pe_machine(&p);
+        let _ = cor20_flags(&p);
+        let after = PE_OPENS.with(|c| c.get());
+        let _ = std::fs::remove_file(&p);
+        assert_eq!(after - before, 2, "PE_OPENS is not counting");
     }
 
     #[test]
