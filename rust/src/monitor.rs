@@ -204,4 +204,24 @@ fn detect_and_notify(cfg: &Config, cycle_start: SystemTime, queue: &NotifyQueue,
     queue.enqueue_dump(cfg.clone(), path.display().to_string());
     h.last_notified_dump_file = file_name;
     h.last_notified_utc = now_iso();
+
+    // Auto-collect a support bundle (rate-limited, skipped when disk is low).
+    if cfg.auto_collect_on_dump {
+        if h.disk_space_low {
+            logger::log("Monitor", "Auto-collect skipped: disk space low.");
+        } else {
+            let opts = crate::collect::pdm_bundle::Options {
+                log_dir: paths::log_dir(),
+                health_path: paths::health_path(),
+                config_path: paths::config_path(),
+                task_name: crate::task::sanitize_task_name(&cfg.task_name),
+                dump_dir: std::path::PathBuf::from(&cfg.dump_directory),
+                max_dump_bytes: crate::collect::pdm_bundle::DEFAULT_MAX_DUMP_BYTES,
+            };
+            match crate::collect::pdm_bundle::auto_bundle(&opts) {
+                Ok(dir) => logger::log("Monitor", &format!("Auto-collected support bundle: {}", dir.display())),
+                Err(e) => logger::log("Monitor", &format!("Auto-collect skipped: {e}")),
+            }
+        }
+    }
 }

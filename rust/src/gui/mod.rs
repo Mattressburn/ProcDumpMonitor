@@ -1,10 +1,17 @@
 #![cfg(windows)]
+//! Mode-based shell (2026-07-25 spec): freely-clickable sidebar with a
+//! MONITOR group (the merged Monitor page) and a LOG COLLECTOR group (Data
+//! Collection / Install Logs / System Health), plus About. Replaces the
+//! linear Back/Next wizard; the Monitor page's actions live in the footer.
+
+mod collect_runner;
+mod dlg_advanced;
+mod dlg_smtp;
 mod page_about;
-mod page_notify;
-mod page_procdump;
-mod page_review;
-mod page_target;
-mod page_task;
+mod page_datacoll;
+mod page_installlogs;
+mod page_monitor;
+mod page_syshealth;
 mod theme;
 
 use crate::config::Config;
@@ -13,52 +20,41 @@ use native_windows_gui as nwg;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-/// Shared across every wizard page. `Rc`'d so each page's `build()` can hold
-/// a clone and read/write the in-progress config without threading it
-/// through every call.
+/// Shared app state (name kept from the wizard era; pages still read/write
+/// the in-progress config through it).
 pub struct WizardState {
     pub cfg: RefCell<Config>,
-    // ponytail: part of the Task 9 interface contract for Task 10's ProcDump
-    // page (tracks whether the user hand-edited a field after picking a
-    // scenario preset, so the preset combo can drop back to "Custom").
-    // Nothing in Task 9 reads or writes it yet.
     #[allow(dead_code)]
     pub dirty_scenario: Cell<bool>,
 }
 
-const STEP_TITLES: [&str; 6] = ["Target", "ProcDump", "Task", "Notify", "Review", "About"];
-const LAST_PAGE: usize = STEP_TITLES.len() - 1;
+const PAGE_COUNT: usize = 5;
 
-// Content-header text per step (owned by the shell; the pages no longer carry
-// their own heading). Kept in step order to match STEP_TITLES.
-const PAGE_TITLES: [&str; 6] = [
-    "Choose what to monitor",
-    "Configure ProcDump",
-    "Scheduled task",
-    "Notifications",
-    "Review & install",
+const PAGE_TITLES: [&str; PAGE_COUNT] = [
+    "Monitor",
+    "Data Collection",
+    "Install Logs",
+    "System Health",
     "About",
 ];
-const PAGE_SUBTITLES: [&str; 6] = [
-    "Pick a Windows service or type a process name.",
-    "Dump triggers, options, and output location.",
-    "How the monitor runs in the background.",
-    "Get an email or webhook alert when a dump is captured.",
-    "Check the summary, then create or manage the scheduled task.",
+const PAGE_SUBTITLES: [&str; PAGE_COUNT] = [
+    "Pick a target, set dump triggers, install the scheduled task \u{2014} all here.",
+    "CCURE application && web logs, plus optional extras.",
+    "Installer artifacts driven by InstallHistory.xml.",
+    "Uptime, process and service snapshots.",
     "Version and build information.",
 ];
+const SIDEBAR_NAMES: [&str; PAGE_COUNT] =
+    ["Monitor", "Data Collection", "Install Logs", "System Health", "About"];
 
-// Sidebar step-list geometry (logical px; nwg scales for DPI).
-const STEP_Y0: i32 = 96;
-const STEP_H: i32 = 40;
-const STEP_ROW_INSET: i32 = 8; // centers the 24-tall label/bar in the 40 row
+// Sidebar geometry (logical px). Two group captions + five clickable rows.
+const ROW_YS: [i32; PAGE_COUNT] = [118, 184, 220, 256, 304];
+const GROUP_MONITOR_Y: i32 = 96;
+const GROUP_COLLECTOR_Y: i32 = 162;
 
 pub fn run() {
     nwg::init().expect("nwg init failed");
 
-    // Global default font (Segoe UI 15px) so any control that doesn't set its
-    // own font still matches the wizard body size. Replaces the old bare
-    // `set_global_family` call.
     let mut default_font = nwg::Font::default();
     let _ = nwg::Font::builder().family("Segoe UI").size(15).build(&mut default_font);
     nwg::Font::set_global_default(Some(default_font));
@@ -68,26 +64,14 @@ pub fn run() {
         dirty_scenario: Cell::new(false),
     });
 
-    // Window icon: pull icon id 1 (winresource's default application icon
-    // id, see build.rs) out of this exe's own resources -- no second copy
-    // of the .ico needs to ship or be loaded from disk at runtime.
     let embed = nwg::EmbedResource::load(None).ok();
     let icon = embed.as_ref().and_then(|e| e.icon(1, None));
 
-    // Built WITHOUT the VISIBLE flag on purpose: every sidebar/content static
-    // is created and painted the instant it's built, and the theme registry
-    // (theme.rs) that decides its text/background color is populated by the
-    // register_*() call that runs on the NEXT line after each build(). If the
-    // window is visible during construction, that first paint happens before
-    // the register call and WM_CTLCOLORSTATIC reads an empty registry -> the
-    // control keeps a wrong (white/near-black) color forever, because nothing
-    // invalidates it again (the six step labels only looked right because nav
-    // re-set_font()s them, forcing a repaint). Showing the window once, after
-    // everything is built AND registered, makes every control's first real
-    // paint query the fully-populated registry.
+    // Built hidden; shown only after every control is built AND theme-
+    // registered (first-paint ordering — see theme.rs).
     let mut window = nwg::Window::default();
     nwg::Window::builder()
-        .size((920, 640))
+        .size((920, 780))
         .center(true)
         .title("ProcDump Monitor")
         .icon(icon.as_ref())
@@ -95,15 +79,11 @@ pub fn run() {
         .build(&mut window)
         .expect("window");
     let window_handle = window.handle;
-
-    // White content canvas + gray sidebar + footer divider, and the text
-    // coloring the sidebar/header labels rely on.
     theme::attach(&window.handle);
 
-    // Fonts kept alive for the window's lifetime (nwg::Font never frees its
-    // HFONT, but building once avoids re-creating it on every nav).
     let app_title_font = theme::semibold(18);
-    let step_active_font = theme::semibold(15);
+    let item_active_font = theme::semibold(15);
+    let group_font = theme::semibold(12);
 
     // ---- Sidebar chrome ----------------------------------------------------
     let mut app_title = nwg::Label::default();
@@ -119,7 +99,7 @@ pub fn run() {
 
     let mut app_subtitle = nwg::Label::default();
     nwg::Label::builder()
-        .text("Setup wizard")
+        .text("Monitor && log collection")
         .position((24, 56))
         .size((200, 18))
         .parent(&window)
@@ -129,39 +109,54 @@ pub fn run() {
     theme::register_sidebar_bg(&app_subtitle.handle);
     theme::register_muted(&app_subtitle.handle);
 
-    // Active-step accent bar (3x24) — starts on step 0; moved on nav.
+    let mut group_labels: Vec<nwg::Label> = Vec::new();
+    for (text, y) in [("MONITOR", GROUP_MONITOR_Y), ("LOG COLLECTOR", GROUP_COLLECTOR_Y)] {
+        let mut l = nwg::Label::default();
+        nwg::Label::builder()
+            .text(text)
+            .position((24, y))
+            .size((200, 16))
+            .parent(&window)
+            .build(&mut l)
+            .expect("group label");
+        l.set_font(Some(&group_font));
+        theme::register_sidebar_bg(&l.handle);
+        theme::register_muted(&l.handle);
+        group_labels.push(l);
+    }
+
     let mut accent_bar = nwg::Label::default();
     nwg::Label::builder()
         .text("")
-        .position((0, STEP_Y0 + STEP_ROW_INSET))
+        .position((0, ROW_YS[0] - 1))
         .size((3, 24))
         .parent(&window)
         .build(&mut accent_bar)
         .expect("accent bar");
     theme::register_accent_bar(&accent_bar.handle);
 
-    // Six step rows.
-    let mut step_labels: Vec<nwg::Label> = Vec::with_capacity(STEP_TITLES.len());
-    for (i, name) in STEP_TITLES.iter().enumerate() {
+    let mut item_labels: Vec<nwg::Label> = Vec::with_capacity(PAGE_COUNT);
+    for (i, name) in SIDEBAR_NAMES.iter().enumerate() {
         let mut lbl = nwg::Label::default();
         nwg::Label::builder()
-            .text(&format!("{}  {}", i + 1, name))
-            .position((24, STEP_Y0 + (i as i32) * STEP_H + STEP_ROW_INSET))
-            .size((200, 24))
+            .text(name)
+            .position((24, ROW_YS[i]))
+            .size((200, 22))
             .parent(&window)
             .build(&mut lbl)
-            .expect("step label");
-        lbl.set_font(Some(if i == 0 { &step_active_font } else { theme::body_font() }));
+            .expect("sidebar item");
+        lbl.set_font(Some(if i == 0 { &item_active_font } else { theme::body_font() }));
         theme::register_sidebar_bg(&lbl.handle);
         theme::register_muted(&lbl.handle);
-        step_labels.push(lbl);
+        item_labels.push(lbl);
     }
-    theme::set_active_step(&step_labels[0].handle);
+    theme::set_active_step(&item_labels[0].handle);
+    let item_handles: Vec<nwg::ControlHandle> = item_labels.iter().map(|l| l.handle).collect();
 
     let mut version_label = nwg::Label::default();
     nwg::Label::builder()
         .text(&format!("Version {}", env!("CARGO_PKG_VERSION")))
-        .position((24, 604))
+        .position((24, 744))
         .size((200, 18))
         .parent(&window)
         .build(&mut version_label)
@@ -170,12 +165,12 @@ pub fn run() {
     theme::register_sidebar_bg(&version_label.handle);
     theme::register_muted(&version_label.handle);
 
-    // ---- Content header (per-page title/subtitle, updated on nav) ----------
+    // ---- Content header ------------------------------------------------------
     let mut content_title = nwg::Label::default();
     nwg::Label::builder()
         .text(PAGE_TITLES[0])
         .position((272, 32))
-        .size((624, 34))
+        .size((520, 34))
         .parent(&window)
         .build(&mut content_title)
         .expect("content title");
@@ -185,253 +180,406 @@ pub fn run() {
     nwg::Label::builder()
         .text(PAGE_SUBTITLES[0])
         .position((272, 68))
-        .size((624, 20))
+        .size((520, 20))
         .parent(&window)
         .build(&mut content_subtitle)
         .expect("content subtitle");
     content_subtitle.set_font(Some(theme::subtitle_font()));
     theme::register_muted(&content_subtitle.handle);
 
-    // ---- Footer nav --------------------------------------------------------
-    let mut back_btn = nwg::Button::default();
-    nwg::Button::builder()
-        .text("< Back")
-        .position((696, 596))
-        .size((96, 32))
-        .enabled(false)
+    // Always-elevated badge (the release manifest requires Administrator).
+    let mut admin_pill = nwg::Label::default();
+    nwg::Label::builder()
+        .text("\u{25CF} Administrator")
+        .position((800, 40))
+        .size((110, 18))
         .parent(&window)
-        .build(&mut back_btn)
-        .expect("back");
+        .build(&mut admin_pill)
+        .expect("admin pill");
+    admin_pill.set_font(Some(theme::subtitle_font()));
+    theme::register_accent(&admin_pill.handle);
 
-    let mut next_btn = nwg::Button::default();
-    nwg::Button::builder()
-        .text("Next >")
-        .position((800, 596))
-        .size((96, 32))
-        .parent(&window)
-        .build(&mut next_btn)
-        .expect("next");
-    let back_h = back_btn.handle;
-    let next_h = next_btn.handle;
-
-    // One frame per page, identical rect; pages build their controls inside.
-    // Only the current page's frame carries the VISIBLE flag. `VISIBLE` is
-    // WS_VISIBLE with no border, so the frame draws no dark box on the canvas.
-    let mut frames: Vec<nwg::Frame> = Vec::with_capacity(STEP_TITLES.len());
-    for i in 0..STEP_TITLES.len() {
+    // ---- Page frames -----------------------------------------------------------
+    let mut frames: Vec<nwg::Frame> = Vec::with_capacity(PAGE_COUNT);
+    for i in 0..PAGE_COUNT {
         let mut f = nwg::Frame::default();
         nwg::Frame::builder()
             .position((240, 100))
-            .size((680, 456))
+            .size((680, 596))
             .flags(if i == 0 { nwg::FrameFlags::VISIBLE } else { nwg::FrameFlags::NONE })
             .parent(&window)
             .build(&mut f)
             .expect("frame");
-        // Each frame paints its own white body + white label backgrounds.
         theme::attach(&f.handle);
         frames.push(f);
     }
 
-    let target_page = page_target::build(&frames[0], state.clone());
-    target_page.load(&state.cfg.borrow());
-    let cmb_service_h = target_page.cmb_service.handle;
-    let btn_refresh_h = target_page.btn_refresh.handle;
-    let chk_show_all_h = target_page.chk_show_all.handle;
+    // ---- Footer action buttons (Monitor page only) -------------------------------
+    fn footer_btn(window: &nwg::Window, text: &str, x: i32, y: i32, w: i32, h: i32) -> nwg::Button {
+        let mut b = nwg::Button::default();
+        nwg::Button::builder()
+            .text(text)
+            .position((x, y))
+            .size((w, h))
+            .parent(window)
+            .build(&mut b)
+            .expect("footer button");
+        b
+    }
+    let btn_create = footer_btn(&window, "Create Task", 264, 712, 140, 32);
+    let btn_run = footer_btn(&window, "Run Now", 412, 712, 110, 32);
+    let btn_stop = footer_btn(&window, "Stop", 530, 712, 100, 32);
+    let btn_remove = footer_btn(&window, "Remove Task", 638, 712, 130, 32);
+    let btn_save_cfg = footer_btn(&window, "Save Config", 264, 748, 108, 26);
+    let btn_open_dumps = footer_btn(&window, "Open Dumps", 380, 748, 112, 26);
+    let btn_view_logs = footer_btn(&window, "View Logs", 500, 748, 96, 26);
+    let btn_copy_args = footer_btn(&window, "Copy Args", 604, 748, 92, 26);
+    let btn_taskschd = footer_btn(&window, "Task Scheduler", 704, 748, 118, 26);
 
-    // Pages 1/2 aren't visible at startup -- populated on first nav via the
-    // load arm below, same as page 0 above but eagerly.
-    let procdump_page = page_procdump::build(&frames[1], state.clone());
-    let cmb_scenario_h = procdump_page.cmb_scenario.handle;
-    let btn_browse_pd_h = procdump_page.btn_browse_pd.handle;
-    let btn_browse_dir_h = procdump_page.btn_browse_dir.handle;
+    // ---- Pages -------------------------------------------------------------------
+    let monitor_page = Rc::new(page_monitor::build(&frames[0], state.clone()));
+    let datacoll_page = page_datacoll::build(&frames[1], state.clone());
+    let installlogs_page = page_installlogs::build(&frames[2], state.clone());
+    let syshealth_page = page_syshealth::build(&frames[3], state.clone());
+    let about_page = page_about::build(&frames[4], state.clone());
 
-    let task_page = page_task::build(&frames[2], state.clone());
-    let btn_reset_auto_h = task_page.btn_reset_auto.handle;
-    let btn_copy_cmd_h = task_page.btn_copy_cmd.handle;
+    monitor_page.load(&state.cfg.borrow());
+    monitor_page.refresh_preview(&state);
+    monitor_page.refresh_status(&state);
 
-    let notify_page = page_notify::build(&frames[3], state.clone());
-    let chk_email_h = notify_page.chk_email.handle;
-    let chk_webhook_h = notify_page.chk_webhook.handle;
-    let btn_validate_h = notify_page.btn_validate.handle;
-    let btn_test_email_h = notify_page.btn_test_email.handle;
+    // ---- Dialogs (owned, reusable; nwg hides them on WM_CLOSE) --------------------
+    let window = Rc::new(window);
+    let adv_dlg = Rc::new(dlg_advanced::build(&window));
+    let smtp_dlg = Rc::new(dlg_smtp::build(&window));
 
-    let review_page = page_review::build(&frames[4], state.clone());
-    let btn_create_h = review_page.btn_create.handle;
-    let btn_run_h = review_page.btn_run.handle;
-    let btn_stop_h = review_page.btn_stop.handle;
-    let btn_remove_h = review_page.btn_remove.handle;
-    let btn_save_only_h = review_page.btn_save_only.handle;
-    let btn_open_dumps_h = review_page.btn_open_dumps.handle;
-    let btn_view_logs_h = review_page.btn_view_logs.handle;
-    let btn_copy_args_h = review_page.btn_copy_args.handle;
-    let btn_taskschd_h = review_page.btn_taskschd.handle;
+    // ---- Status poll timer ----------------------------------------------------------
+    let mut status_timer = nwg::AnimationTimer::default();
+    nwg::AnimationTimer::builder()
+        .parent(&*window)
+        .interval(std::time::Duration::from_millis(3000))
+        .active(true)
+        .build(&mut status_timer)
+        .expect("status timer");
+    let timer_h = status_timer.handle;
 
-    let about_page = page_about::build(&frames[5], state.clone());
+    // Handles captured for the dispatcher.
+    let m = &monitor_page;
+    let cmb_target_h = m.cmb_target.handle;
+    let btn_refresh_h = m.btn_refresh.handle;
+    let chk_show_all_h = m.chk_show_all.handle;
+    let cmb_scenario_h = m.cmb_scenario.handle;
+    let btn_browse_pd_h = m.btn_browse_pd.handle;
+    let btn_browse_dir_h = m.btn_browse_dir.handle;
+    let chk_email_h = m.chk_email.handle;
+    let chk_webhook_h = m.chk_webhook.handle;
+    let btn_advanced_h = m.btn_advanced.handle;
+    let btn_smtp_h = m.btn_smtp.handle;
+
+    let dc_browse_h = datacoll_page.btn_browse.handle;
+    let dc_all_h = datacoll_page.btn_all.handle;
+    let dc_none_h = datacoll_page.btn_none.handle;
+    let dc_start_h = datacoll_page.btn_start.handle;
+    let dc_open_h = datacoll_page.btn_open.handle;
+    let dc_notice_h = datacoll_page.runner.notice.handle;
+
+    let il_browse_h = installlogs_page.btn_browse.handle;
+    let il_start_h = installlogs_page.btn_start.handle;
+    let il_open_h = installlogs_page.btn_open.handle;
+    let il_notice_h = installlogs_page.runner.notice.handle;
+
+    let sh_start_h = syshealth_page.btn_start.handle;
+    let sh_open_h = syshealth_page.btn_open.handle;
+    let sh_notice_h = syshealth_page.runner.notice.handle;
+
+    let (create_h, run_h, stop_h, remove_h) =
+        (btn_create.handle, btn_run.handle, btn_stop.handle, btn_remove.handle);
+    let (save_cfg_h, open_dumps_h, view_logs_h, copy_args_h, taskschd_h) = (
+        btn_save_cfg.handle,
+        btn_open_dumps.handle,
+        btn_view_logs.handle,
+        btn_copy_args.handle,
+        btn_taskschd.handle,
+    );
 
     let current = Cell::new(0usize);
 
-    // Single subclass hook for the whole window: `full_bind_event_handler`
-    // already walks all children recursively, so wizard nav (Back/Next/
-    // Close) and each page's own control events (service refresh, combo
-    // pick, ...) live in one dispatcher instead of one hook per control.
-    // Task 10/11 add one match arm per new page/control here.
-    let handler = nwg::full_bind_event_handler(&window_handle, move |evt, _data, handle| {
-        match evt {
-            nwg::Event::OnWindowClose if handle == window_handle => {
-                nwg::stop_thread_dispatch();
-            }
-            nwg::Event::OnButtonClick if handle == btn_refresh_h || handle == chk_show_all_h => {
-                target_page.refresh_services();
-            }
-            nwg::Event::OnComboxBoxSelection if handle == cmb_service_h => {
-                target_page.on_service_picked();
-            }
-            nwg::Event::OnComboxBoxSelection if handle == cmb_scenario_h => {
-                procdump_page.on_scenario_selected(&state);
-            }
-            nwg::Event::OnButtonClick if handle == btn_browse_pd_h => {
-                procdump_page.browse_procdump_path(window_handle);
-            }
-            nwg::Event::OnButtonClick if handle == btn_browse_dir_h => {
-                procdump_page.browse_dump_dir(window_handle);
-            }
-            nwg::Event::OnButtonClick if handle == btn_reset_auto_h => {
-                task_page.reset_to_auto(&state);
-            }
-            nwg::Event::OnButtonClick if handle == btn_copy_cmd_h => {
-                task_page.copy_command();
-            }
-            nwg::Event::OnTextInput | nwg::Event::OnButtonClick | nwg::Event::OnComboxBoxSelection
-                if procdump_page.is_option_control(handle) =>
-            {
-                procdump_page.on_option_changed(&state);
-            }
-            nwg::Event::OnButtonClick if handle == chk_email_h => {
-                notify_page.on_email_toggled();
-            }
-            nwg::Event::OnButtonClick if handle == chk_webhook_h => {
-                notify_page.on_webhook_toggled();
-            }
-            nwg::Event::OnButtonClick if handle == btn_validate_h => {
-                notify_page.validate_smtp();
-            }
-            nwg::Event::OnButtonClick if handle == btn_test_email_h => {
-                notify_page.send_test_email(&state);
-            }
-            nwg::Event::OnButtonClick if handle == btn_create_h => {
-                // Mirrors a forward wizard nav's save step across every page
-                // (Review itself has no editable fields) so Create/Update
-                // Task always installs whatever is currently on-screen, even
-                // if the user jumped here without visiting every page this
-                // session. Aborts -- without installing -- if Notify's
-                // validation fails; it has already shown the error dialog.
-                let ok = {
-                    let mut cfg = state.cfg.borrow_mut();
-                    target_page.save(&mut cfg)
-                        && procdump_page.save(&mut cfg)
-                        && task_page.save(&mut cfg)
-                        && notify_page.save(&mut cfg)
-                };
-                if ok {
-                    review_page.create_task(&state);
-                }
-            }
-            nwg::Event::OnButtonClick if handle == btn_run_h => {
-                review_page.run_task();
-            }
-            nwg::Event::OnButtonClick if handle == btn_stop_h => {
-                review_page.stop_task();
-            }
-            nwg::Event::OnButtonClick if handle == btn_remove_h => {
-                review_page.remove_task(&state);
-            }
-            nwg::Event::OnButtonClick if handle == btn_save_only_h => {
-                review_page.save_config_only(&state);
-            }
-            nwg::Event::OnButtonClick if handle == btn_open_dumps_h => {
-                review_page.open_dump_folder(&state);
-            }
-            nwg::Event::OnButtonClick if handle == btn_view_logs_h => {
-                review_page.view_logs();
-            }
-            nwg::Event::OnButtonClick if handle == btn_copy_args_h => {
-                review_page.copy_args(&state);
-            }
-            nwg::Event::OnButtonClick if handle == btn_taskschd_h => {
-                review_page.open_task_scheduler();
-            }
-            nwg::Event::OnButtonClick if handle == back_h || handle == next_h => {
-                let cur = current.get();
-                let next = if handle == next_h { cur + 1 } else { cur.saturating_sub(1) };
-                if next > LAST_PAGE {
-                    return; // Next on the last page: no-op (Back is disabled on page 1, so
-                            // a stray click there just reselects the current page below)
+    // ---- Main dispatcher --------------------------------------------------------------
+    let handler = {
+        let state = state.clone();
+        let monitor_page = monitor_page.clone();
+        let adv_dlg = adv_dlg.clone();
+        let smtp_dlg = smtp_dlg.clone();
+        let window_rc = window.clone();
+        nwg::full_bind_event_handler(&window_handle, move |evt, _data, handle| {
+            match evt {
+                nwg::Event::OnWindowClose if handle == window_handle => {
+                    nwg::stop_thread_dispatch();
                 }
 
-                // Every page's save() now returns bool (only Notify's ever
-                // returns false, on invalid email settings). A false abort
-                // leaves `current`, the frames, and the sidebar/header state
-                // untouched -- the user stays put with the error dialog Notify
-                // already showed, and no partial state change happened.
-                let save_ok = match cur {
-                    0 => target_page.save(&mut state.cfg.borrow_mut()),
-                    1 => procdump_page.save(&mut state.cfg.borrow_mut()),
-                    2 => task_page.save(&mut state.cfg.borrow_mut()),
-                    3 => notify_page.save(&mut state.cfg.borrow_mut()),
-                    4 => review_page.save(&mut state.cfg.borrow_mut()),
-                    5 => about_page.save(&mut state.cfg.borrow_mut()),
-                    _ => true,
-                };
-                if !save_ok {
-                    return;
-                }
-
-                // Load-before-show: a frame is never made visible before its
-                // controls are repopulated for the config it's about to
-                // display (fixed from Task 9's save -> toggle -> load order).
-                match next {
-                    0 => target_page.load(&state.cfg.borrow()),
-                    1 => {
-                        procdump_page.load(&state.cfg.borrow());
-                        procdump_page.refresh_preview(&state);
+                // ---- Sidebar navigation ----
+                nwg::Event::OnLabelClick => {
+                    let Some(next) = item_handles.iter().position(|h| *h == handle) else {
+                        return;
+                    };
+                    let cur = current.get();
+                    if next == cur {
+                        return;
                     }
-                    2 => task_page.load(&state.cfg.borrow()),
-                    3 => notify_page.load(&state.cfg.borrow()),
-                    4 => review_page.load(&state.cfg.borrow()),
-                    5 => about_page.load(&state.cfg.borrow()),
-                    _ => {}
+                    // Save the outgoing page (never blocks — validation
+                    // happens on Create Task).
+                    match cur {
+                        0 => {
+                            monitor_page.save(&mut state.cfg.borrow_mut());
+                        }
+                        4 => {
+                            about_page.save(&mut state.cfg.borrow_mut());
+                        }
+                        _ => {}
+                    }
+                    if next == 0 {
+                        monitor_page.load(&state.cfg.borrow());
+                        monitor_page.refresh_preview(&state);
+                        monitor_page.refresh_status(&state);
+                    } else if next == 4 {
+                        about_page.load(&state.cfg.borrow());
+                    }
+
+                    frames[cur].set_visible(false);
+                    frames[next].set_visible(true);
+                    content_title.set_text(PAGE_TITLES[next]);
+                    content_subtitle.set_text(PAGE_SUBTITLES[next]);
+
+                    theme::set_active_step(&item_labels[next].handle);
+                    for (i, lbl) in item_labels.iter().enumerate() {
+                        lbl.set_font(Some(if i == next {
+                            &item_active_font
+                        } else {
+                            theme::body_font()
+                        }));
+                    }
+                    accent_bar.set_position(0, ROW_YS[next] - 1);
+
+                    for b in [
+                        &btn_create,
+                        &btn_run,
+                        &btn_stop,
+                        &btn_remove,
+                        &btn_save_cfg,
+                        &btn_open_dumps,
+                        &btn_view_logs,
+                        &btn_copy_args,
+                        &btn_taskschd,
+                    ] {
+                        b.set_visible(next == 0);
+                    }
+                    current.set(next);
                 }
 
-                frames[cur].set_visible(false);
-                frames[next].set_visible(true);
-
-                // Content header text for the new page.
-                content_title.set_text(PAGE_TITLES[next]);
-                content_subtitle.set_text(PAGE_SUBTITLES[next]);
-
-                // Sidebar active-step indicator: set the active row first so the
-                // font-driven repaints below pick up the new accent/muted text
-                // colors, then move the accent bar to the active row.
-                theme::set_active_step(&step_labels[next].handle);
-                for (i, lbl) in step_labels.iter().enumerate() {
-                    lbl.set_font(Some(if i == next { &step_active_font } else { theme::body_font() }));
+                // ---- Live status poll ----
+                nwg::Event::OnTimerTick if handle == timer_h => {
+                    if current.get() == 0 {
+                        monitor_page.refresh_status(&state);
+                    }
                 }
-                accent_bar.set_position(0, STEP_Y0 + (next as i32) * STEP_H + STEP_ROW_INSET);
 
-                back_btn.set_enabled(next > 0);
-                next_btn.set_enabled(next < LAST_PAGE);
+                // ---- Monitor page ----
+                nwg::Event::OnButtonClick if handle == btn_refresh_h || handle == chk_show_all_h => {
+                    monitor_page.refresh_targets();
+                }
+                nwg::Event::OnComboxBoxSelection if handle == cmb_target_h => {
+                    monitor_page.on_target_picked(&state);
+                }
+                nwg::Event::OnComboxBoxSelection if handle == cmb_scenario_h => {
+                    monitor_page.on_scenario_selected(&state);
+                }
+                nwg::Event::OnButtonClick if handle == btn_browse_pd_h => {
+                    monitor_page.browse_procdump_path(window_handle);
+                }
+                nwg::Event::OnButtonClick if handle == btn_browse_dir_h => {
+                    monitor_page.browse_dump_dir(window_handle);
+                }
+                nwg::Event::OnButtonClick if handle == chk_email_h => {
+                    monitor_page.on_email_toggled();
+                }
+                nwg::Event::OnButtonClick if handle == chk_webhook_h => {
+                    monitor_page.on_webhook_toggled();
+                }
+                nwg::Event::OnTextInput | nwg::Event::OnButtonClick | nwg::Event::OnComboxBoxSelection
+                    if monitor_page.is_option_control(handle) =>
+                {
+                    monitor_page.on_option_changed(&state);
+                }
+                nwg::Event::OnButtonClick if handle == btn_advanced_h => {
+                    monitor_page.save(&mut state.cfg.borrow_mut());
+                    adv_dlg.open(&state.cfg.borrow(), &monitor_page.manual_target.borrow());
+                    window_rc.set_enabled(false);
+                }
+                nwg::Event::OnButtonClick if handle == btn_smtp_h => {
+                    monitor_page.save(&mut state.cfg.borrow_mut());
+                    smtp_dlg.open(&state.cfg.borrow());
+                    window_rc.set_enabled(false);
+                }
 
-                current.set(next);
+                // ---- Footer actions ----
+                nwg::Event::OnButtonClick if handle == create_h => {
+                    monitor_page.create_task(&state);
+                }
+                nwg::Event::OnButtonClick if handle == run_h => {
+                    monitor_page.run_task(&state);
+                }
+                nwg::Event::OnButtonClick if handle == stop_h => {
+                    monitor_page.stop_task(&state);
+                }
+                nwg::Event::OnButtonClick if handle == remove_h => {
+                    monitor_page.remove_task(&state);
+                }
+                nwg::Event::OnButtonClick if handle == save_cfg_h => {
+                    monitor_page.save_config_only(&state);
+                }
+                nwg::Event::OnButtonClick if handle == open_dumps_h => {
+                    monitor_page.open_dump_folder(&state);
+                }
+                nwg::Event::OnButtonClick if handle == view_logs_h => {
+                    monitor_page.view_logs();
+                }
+                nwg::Event::OnButtonClick if handle == copy_args_h => {
+                    monitor_page.copy_args(&state);
+                }
+                nwg::Event::OnButtonClick if handle == taskschd_h => {
+                    monitor_page.open_task_scheduler();
+                }
+
+                // ---- Data Collection page ----
+                nwg::Event::OnButtonClick if handle == dc_browse_h => {
+                    datacoll_page.browse_save_path(window_handle);
+                }
+                nwg::Event::OnButtonClick if handle == dc_all_h => {
+                    datacoll_page.set_components(true);
+                }
+                nwg::Event::OnButtonClick if handle == dc_none_h => {
+                    datacoll_page.set_components(false);
+                }
+                nwg::Event::OnButtonClick if handle == dc_start_h => {
+                    datacoll_page.start(&state);
+                }
+                nwg::Event::OnButtonClick if handle == dc_open_h => {
+                    datacoll_page.runner.open_last_output();
+                }
+                nwg::Event::OnNotice if handle == dc_notice_h => {
+                    datacoll_page.on_notice();
+                }
+
+                // ---- Install Logs page ----
+                nwg::Event::OnButtonClick if handle == il_browse_h => {
+                    installlogs_page.browse_history(window_handle);
+                }
+                nwg::Event::OnButtonClick if handle == il_start_h => {
+                    installlogs_page.start();
+                }
+                nwg::Event::OnButtonClick if handle == il_open_h => {
+                    installlogs_page.runner.open_last_output();
+                }
+                nwg::Event::OnNotice if handle == il_notice_h => {
+                    installlogs_page.on_notice();
+                }
+
+                // ---- System Health page ----
+                nwg::Event::OnButtonClick if handle == sh_start_h => {
+                    syshealth_page.start();
+                }
+                nwg::Event::OnButtonClick if handle == sh_open_h => {
+                    syshealth_page.runner.open_last_output();
+                }
+                nwg::Event::OnNotice if handle == sh_notice_h => {
+                    syshealth_page.on_notice();
+                }
+
+                _ => {}
             }
-            _ => {}
-        }
-    });
+        })
+    };
 
-    // Everything is built and registered with the theme: reveal the window so
-    // each control's first paint queries the fully-populated color registry
-    // (see the WindowFlags::WINDOW comment where the window is built).
+    // ---- Advanced dialog dispatcher -----------------------------------------------------
+    let adv_handler = {
+        let state = state.clone();
+        let monitor_page = monitor_page.clone();
+        let adv = adv_dlg.clone();
+        let window_rc = window.clone();
+        let adv_window_h = adv_dlg.window.handle;
+        let adv_close_h = adv_dlg.btn_close.handle;
+        nwg::full_bind_event_handler(&adv_window_h, move |evt, _data, handle| {
+            let finalize = || {
+                let manual = adv.save(&mut state.cfg.borrow_mut());
+                *monitor_page.manual_target.borrow_mut() = manual;
+                window_rc.set_enabled(true);
+                window_rc.set_focus();
+                if adv.dirty.get() {
+                    monitor_page.on_advanced_changed(&state);
+                }
+            };
+            match evt {
+                nwg::Event::OnButtonClick if handle == adv_close_h => {
+                    adv.window.set_visible(false);
+                    finalize();
+                }
+                nwg::Event::OnWindowClose if handle == adv_window_h => {
+                    finalize();
+                }
+                nwg::Event::OnTextInput | nwg::Event::OnButtonClick => {
+                    adv.dirty.set(true);
+                }
+                _ => {}
+            }
+        })
+    };
+
+    // ---- SMTP dialog dispatcher ----------------------------------------------------------
+    let smtp_handler = {
+        let state = state.clone();
+        let smtp = smtp_dlg.clone();
+        let window_rc = window.clone();
+        let smtp_window_h = smtp_dlg.window.handle;
+        let smtp_close_h = smtp_dlg.btn_close.handle;
+        let smtp_validate_h = smtp_dlg.btn_validate.handle;
+        let smtp_test_h = smtp_dlg.btn_test.handle;
+        nwg::full_bind_event_handler(&smtp_window_h, move |evt, _data, handle| {
+            let finalize = || {
+                smtp.save(&mut state.cfg.borrow_mut());
+                smtp.txt_password.set_text("");
+                smtp.txt_password.set_placeholder_text(
+                    if state.cfg.borrow().encrypted_password_blob.is_empty() {
+                        None
+                    } else {
+                        Some("(unchanged)")
+                    },
+                );
+                window_rc.set_enabled(true);
+                window_rc.set_focus();
+            };
+            match evt {
+                nwg::Event::OnButtonClick if handle == smtp_validate_h => {
+                    smtp.validate_smtp();
+                }
+                nwg::Event::OnButtonClick if handle == smtp_test_h => {
+                    let snapshot = state.cfg.borrow().clone();
+                    smtp.send_test_email(&snapshot);
+                }
+                nwg::Event::OnButtonClick if handle == smtp_close_h => {
+                    smtp.window.set_visible(false);
+                    finalize();
+                }
+                nwg::Event::OnWindowClose if handle == smtp_window_h => {
+                    finalize();
+                }
+                _ => {}
+            }
+        })
+    };
+
     window.set_visible(true);
-
     nwg::dispatch_thread_events();
+    nwg::unbind_event_handler(&smtp_handler);
+    nwg::unbind_event_handler(&adv_handler);
     nwg::unbind_event_handler(&handler);
+    drop(status_timer);
 }

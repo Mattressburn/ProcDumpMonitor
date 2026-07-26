@@ -36,7 +36,12 @@ const NEAR_BLACK: [u8; 3] = [27, 27, 27];
 // Logical layout constants shared with the shell (mod.rs) — scaled to physical
 // inside the erase handler only.
 const SIDEBAR_W: i32 = 240;
-const DIVIDER_Y: i32 = 560;
+const DIVIDER_Y: i32 = 700;
+
+// Status-panel text colors (Monitor page live status rows).
+pub const GOOD: [u8; 3] = [16, 124, 16]; // #107C10
+pub const BAD: [u8; 3] = [196, 43, 28]; // #C42B1C
+pub const WARN: [u8; 3] = [157, 93, 0]; // #9D5D00
 
 // One arbitrary-but-fixed subclass id for our handler; we bind exactly one theme
 // handler per parent, so a constant is fine.
@@ -106,6 +111,9 @@ struct Reg {
     gray_bg: Vec<isize>,   // sidebar labels: painted on SIDEBAR_BG, not white
     accent_bg: Vec<isize>, // the moving 3x24 active-step bar
     active_step: isize,    // step label that is currently the active page
+    /// Per-handle override color (status rows change color at runtime);
+    /// wins over accent/muted registration.
+    status_colors: std::collections::HashMap<isize, [u8; 3]>,
 }
 
 thread_local! {
@@ -168,6 +176,25 @@ pub fn set_active_step(h: &ControlHandle) {
     REG.with(|r| r.borrow_mut().active_step = k);
 }
 
+/// Set (or change) a runtime text color for a status label, then repaint it.
+/// Overrides any accent/muted registration for that handle.
+pub fn set_status_color(h: &ControlHandle, color: [u8; 3]) {
+    let k = hwnd_key(h);
+    REG.with(|r| {
+        r.borrow_mut().status_colors.insert(k, color);
+    });
+    // Colors are only read on paint: force one so the change is visible now.
+    if let Some(raw) = h.hwnd() {
+        unsafe {
+            let _ = windows::Win32::Graphics::Gdi::InvalidateRect(
+                HWND(raw as *mut core::ffi::c_void),
+                None,
+                true,
+            );
+        }
+    }
+}
+
 // ---- Painting --------------------------------------------------------------
 
 /// Attach white-canvas painting + text coloring to a parent (the main window or
@@ -194,7 +221,9 @@ pub fn attach(parent: &ControlHandle) {
                 let hdc = HDC(w as *mut core::ffi::c_void);
                 let (text, brush, bg) = REG.with(|r| {
                     let r = r.borrow();
-                    let text = if child == r.active_step || r.accent_text.contains(&child) {
+                    let text = if let Some(c) = r.status_colors.get(&child) {
+                        *c
+                    } else if child == r.active_step || r.accent_text.contains(&child) {
                         ACCENT
                     } else if r.muted_text.contains(&child) {
                         MUTED

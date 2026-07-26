@@ -95,6 +95,9 @@ pub struct Config {
     pub webhook_enabled: bool,
     pub webhook_url: String,                 // plaintext (encrypted on save)
     pub encrypted_webhook_url_blob: String,  // base64 DPAPI blob
+    /// Run a rate-limited support-bundle collection whenever a dump is
+    /// captured (collect::pdm_bundle::auto_bundle).
+    pub auto_collect_on_dump: bool,
 }
 
 impl Default for Config {
@@ -147,6 +150,7 @@ impl Default for Config {
             webhook_enabled: false,
             webhook_url: String::new(),
             encrypted_webhook_url_blob: String::new(),
+            auto_collect_on_dump: false,
         }
     }
 }

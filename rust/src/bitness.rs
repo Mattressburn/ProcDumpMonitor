@@ -70,6 +70,46 @@ pub fn select_binary(bitness: Bitness, procdump_dir: &Path, os_is_64: bool) -> B
     }
 }
 
+/// Unique running-process exe names via Toolhelp, sorted case-insensitively.
+/// Feeds the Monitor page's combined Svc:/Proc: target dropdown.
+#[cfg(windows)]
+pub fn list_process_names() -> Vec<String> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let mut names: Vec<String> = Vec::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
+            return names;
+        };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if Process32FirstW(snap, &mut entry).is_ok() {
+            loop {
+                let name = String::from_utf16_lossy(
+                    &entry.szExeFile
+                        [..entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(0)],
+                );
+                if !name.is_empty() {
+                    names.push(name);
+                }
+                if Process32NextW(snap, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+    }
+    names.sort_by(|a, b| a.to_ascii_lowercase().cmp(&b.to_ascii_lowercase()));
+    names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    names
+}
+
 /// Find a PID by exe name (case-insensitive, .exe optional) via Toolhelp,
 /// then classify with IsWow64Process2 resolved via GetProcAddress.
 /// CRITICAL: IsWow64Process2 does not exist on Server 2016 (build 14393) —
