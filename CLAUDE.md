@@ -64,6 +64,38 @@ and the 32-bit managed stacks are unusable.
   No args → scans running `SoftwareHouse.*`. Compare its RESOLVED column
   against Task Manager's Platform column.
 
+## Strings frozen at the LogDump rename (shipped 2026-07-26 — do not "finish")
+
+The product was renamed ProcDumpMonitor → LogDump. Four sites keep the old
+string **on purpose**. Each carries a comment at the site; this is the index.
+A blanket find-and-replace over `ProcDumpMonitor` is a data-loss bug.
+
+- **`secrets.rs` DPAPI entropy** (`ProcDumpMonitor-SMTP-v1`,
+  `ProcDumpMonitor-Webhook-v1`). The entropy is part of the decryption key.
+  Change the bytes and every saved SMTP password and webhook URL on every
+  existing install stops decrypting — silently, with no migration path. Never
+  shown to a user, so the stale name costs nothing.
+- **Support-bundle paths** (`cli.rs` staging dir + zip, `datacoll.rs`
+  `staging.join(...)`). This is collector output layout, which JCI support
+  tooling matches. Prose *inside* the bundle was renamed; **paths were not**.
+  Ask before changing, same rule as the rest of the collector layout.
+- **`config.rs` legacy C# config fixture** (`"TaskName": "ProcDump Monitor"`).
+  It is a sample of what a real pre-rename config contains. Renaming it makes
+  the compat test lie about its own input.
+- **`task::is_default_task_name`** matches `"ProcDump Monitor"` as well as
+  `"LogDump"`. A config written before the rename would otherwise look
+  user-customized and its task name would stop following the target. This is
+  the **only** copy of that rule — both `page_monitor.rs` call sites go
+  through it. Do not inline it back; two copies of a two-literal check is the
+  same divergence that caused the bitness bug.
+
+Also: `auto_task_name` only ever *names a new task*. Every start/stop/
+uninstall/status path reads `cfg.task_name`. Keep it that way, or an upgraded
+install loses control of its already-registered task.
+
+VERSIONINFO is set explicitly in `build.rs` — winresource otherwise derives it
+from the crate name and ships a lowercase `logdump` to Task Manager.
+
 ## Build / test (Rust)
 
 - Cargo is NOT on PATH: use `%USERPROFILE%\.cargo\bin\cargo.exe`, run from `rust/`.
