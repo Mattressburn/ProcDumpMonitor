@@ -679,21 +679,41 @@ impl MonitorPage {
         }
         *self.manual_target.borrow_mut() =
             if found { String::new() } else { cfg.target_name.clone() };
-        if !found && cfg.target_name.is_empty() {
-            // No saved target at all: re-apply the same default refresh_targets
-            // picked, so the combo shows the hint row instead of reading blank.
+        if !found {
+            // Nothing in the list matched, in EITHER direction, so the combo
+            // must be told what to show — whatever refresh_targets defaulted to
+            // is now wrong:
+            //  * empty saved name -> apply the same default refresh_targets
+            //    picked, so the combo reads the hint row instead of blank.
+            //  * non-empty saved name -> the target is stashed in manual_target
+            //    just above and WINS in effective_target(), so leaving the
+            //    CrossFire default selected would make the picker name a
+            //    different process than the one actually dumped. It falls to
+            //    the hint row: "nothing selected" is the honest state while the
+            //    override carries the real target.
             //
             // NOT a hard `Some(0)`: load() runs AFTER build()'s refresh_targets
             // (mod.rs:247 then :253, and again on every switch back to this
             // page), so pinning the hint here would clobber the CrossFire
             // default on every fresh install and kill the feature silently.
             //
-            // ponytail: no unit test reaches this (it needs live nwg controls),
-            // and this dev box has no C-CURE, so the ordering is guarded by
-            // review only. Upgrade path: assert the combo's selected text in
-            // scripts/gui-e2e.ps1 on a host where a preferred target runs
-            // (Task 8 owns that script).
-            let i = target_selection(&self.entries.borrow(), None);
+            // ponytail: `target_selection` matches on name only, while the
+            // lookup above also matches the TYPE. found==false therefore means
+            // any surviving name match is the WRONG type, and selecting it
+            // would make the next save() infer TargetType::Process for a
+            // Service (config.rs:37 — infer_target_type only answers Service
+            // when the picked ROW is a service). Unreachable in practice:
+            // Toolhelp image names carry `.exe`, service short names do not.
+            // Ceiling accepted rather than pushing the type into the pure rule
+            // for a case that cannot occur; upgrade path is a `want_service`
+            // parameter on target_selection if a collision is ever observed.
+            //
+            // ponytail: no unit test reaches this branch itself (it needs live
+            // nwg controls) — only target_selection under it is covered, so the
+            // load-order and the guard width are guarded by review. Upgrade
+            // path: assert the combo's selected text in scripts/gui-e2e.ps1 on
+            // a host where a preferred target runs (Task 8 owns that script).
+            let i = target_selection(&self.entries.borrow(), Some(&cfg.target_name));
             self.cmb_target.set_selection(Some(i));
         }
 
@@ -1273,6 +1293,20 @@ mod tests {
         // to the default: silently retargeting a dump is worse than a blank.
         let e = crossfire_entries();
         assert_eq!(target_selection(&e, Some("gone.exe")), 0);
+    }
+
+    #[test]
+    fn a_saved_target_missing_from_the_list_never_leaves_a_preferred_row_selected() {
+        // load()'s `!found` branch (page_monitor.rs:682): a saved target that
+        // isn't running is stashed in manual_target and WINS in
+        // effective_target(), so if this fell through to the PREFERRED path the
+        // picker would show CrossFire while the app dumped the saved target.
+        // Reachable on a normal C-CURE launch: saved target stopped, CrossFire
+        // running.
+        let e = crossfire_entries();
+        assert!(e.iter().any(|x| x.name == CF_SERVER), "fixture must offer the default");
+        assert_eq!(target_selection(&e, Some("SomeStoppedService")), 0);
+        assert!(e[0].name.is_empty(), "index 0 must be the hint row");
     }
 
     #[test]

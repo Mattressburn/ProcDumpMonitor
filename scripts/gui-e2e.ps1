@@ -177,7 +177,7 @@ Shot '01-monitor'
 $combo = Require (Top-Combo) "target combo"
 $comboH = [IntPtr]$combo.Current.NativeWindowHandle
 $c0 = Combo-Count $combo
-Write-Host "probe: target combo has $c0 process + running-service entries"
+Write-Host "probe: target combo has $c0 entries (hint row + processes + running services)"
 if ($c0 -lt 1) { Fail "target combo empty (expected processes and services)" }
 
 # PROCESSES MUST COME FIRST (they'd be unreachable under 150+ services).
