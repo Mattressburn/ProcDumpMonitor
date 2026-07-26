@@ -2,6 +2,7 @@
 // #[cfg(windows)] — this product's entry points are Windows-only.
 #![cfg_attr(not(windows), allow(dead_code))]
 
+use crate::config::{Config, TargetType};
 use std::path::{Path, PathBuf};
 
 const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
@@ -128,6 +129,214 @@ fn expand_env(s: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+const SERVICES_KEY: &str = r"HKLM\SYSTEM\CurrentControlSet\Services";
+
+/// True unless we are on a 32-bit OS. Extracted so the GUI and the monitor
+/// cannot disagree — the GUI previously hardcoded `true`.
+pub fn os_is_64() -> bool {
+    os_is_64_from(
+        std::env::var("PROCESSOR_ARCHITECTURE").ok().as_deref(),
+        std::env::var("PROCESSOR_ARCHITEW6432").ok().as_deref(),
+    )
+}
+
+/// Pure core of `os_is_64`, split out so both branches are testable without
+/// mutating process-global env vars under parallel test threads.
+///
+/// `PROCESSOR_ARCHITEW6432` is only set inside a 32-bit process on 64-bit
+/// Windows (WOW64), where `PROCESSOR_ARCHITECTURE` reads "x86" — so it is the
+/// tie-breaker, not a second opinion. Unset/unreadable falls back to 64-bit:
+/// a 32-bit OS in 2026 is the rarer wrong answer.
+fn os_is_64_from(arch: Option<&str>, arch_w6432: Option<&str>) -> bool {
+    // eq_ignore_ascii_case, not `!= "x86"`: casing of this value is not
+    // contractual and getting it wrong picks the wrong ProcDump binary.
+    arch.map(|a| !a.eq_ignore_ascii_case("x86")).unwrap_or(true) || arch_w6432.is_some()
+}
+
+/// Read a service's ImagePath from the registry.
+///
+/// Uses `collect::run_tool`, which already sets CREATE_NO_WINDOW — a bare
+/// Command spawn from the GUI would stall the message pump.
+#[cfg(windows)]
+pub fn service_image_path(service: &str) -> Option<PathBuf> {
+    let key = format!(r"{SERVICES_KEY}\{service}");
+    let out = crate::collect::run_tool("reg.exe", &["query", &key, "/v", "ImagePath"]).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    image_path_from_reg_output(&String::from_utf8_lossy(&out.stdout))
+}
+
+#[cfg(not(windows))]
+pub fn service_image_path(_service: &str) -> Option<PathBuf> {
+    None
+}
+
+/// Pick the ImagePath value out of `reg.exe query` output and turn it into a
+/// path we are willing to hand onward. Split from `service_image_path` (and
+/// left ungated) so every rule below is unit-testable from a string literal
+/// instead of needing a real service key.
+///
+/// Returns None for svchost-hosted services: the shared host's PE says nothing
+/// about the bitness of the service DLL it loads, so resolution should fall
+/// through to runtime detection rather than confidently answer "64-bit".
+fn image_path_from_reg_output(text: &str) -> Option<PathBuf> {
+    // reg.exe line: "    ImagePath    REG_EXPAND_SZ    C:\path\to.exe -args"
+    // Locale caveat: the value name and the REG_* type tokens are not
+    // localized — same documented assumption as parse_sc_output in services.rs
+    // (en-US; C-CURE deployments are en-US).
+    let raw = text.lines().find_map(|l| {
+        let rest = l.trim_start().strip_prefix("ImagePath")?.trim_start();
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        // The REG_* type token must be where the type belongs. This does two
+        // jobs: it rejects a line with no type token (whose first data word
+        // would otherwise be silently eaten as the type), and it rejects a
+        // differently-named value such as ImagePathBackup, whose name remainder
+        // ("Backup") lands in the type slot. A separate "name must be followed
+        // by whitespace" check would be strictly redundant with it.
+        parts.next().filter(|t| t.starts_with("REG_"))?;
+        Some(parts.next()?.trim().to_string())
+    })?;
+
+    let path = parse_image_path(&raw)?;
+    if path
+        .file_name()
+        .map(|f| f.to_string_lossy().eq_ignore_ascii_case("svchost.exe"))
+        .unwrap_or(false)
+    {
+        return None; // shared host — fall through to runtime detection
+    }
+    // parse_image_path is pure and can hand back a non-path: a driver-style
+    // ImagePath (system32\DRIVERS\foo.sys) has no ".exe" token so the whole
+    // string comes back arguments and all, and relative paths come back
+    // relative. This is the trust boundary — every caller of
+    // service_image_path routes through here, so the check lives here.
+    if !path.exists() {
+        return None;
+    }
+    Some(path)
+}
+
+/// Best-effort file path for the configured target.
+pub fn resolve_target_path(cfg: &Config) -> Option<PathBuf> {
+    match cfg.target_type {
+        TargetType::Service => service_image_path(&cfg.target_name),
+        TargetType::Process => {
+            let p = PathBuf::from(cfg.target_path.trim());
+            if !cfg.target_path.trim().is_empty() && p.exists() {
+                return Some(p);
+            }
+            running_process_path(&cfg.target_name)
+        }
+    }
+}
+
+/// Full image path of a running process, found by exe name.
+///
+/// ponytail: `list_process_names()` dedupes by name, so if two running
+/// processes share an exe name whichever Toolhelp returns first wins. Same-
+/// named processes are overwhelmingly the same image; upgrade to a PID-based
+/// picker only if that assumption breaks in the field.
+#[cfg(windows)]
+fn running_process_path(name: &str) -> Option<PathBuf> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let want = name.trim_end_matches(".exe").trim_end_matches(".EXE").to_ascii_lowercase();
+    if want.is_empty() {
+        return None;
+    }
+
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut pid = 0u32;
+        if Process32FirstW(snap, &mut entry).is_ok() {
+            loop {
+                let n = String::from_utf16_lossy(
+                    &entry.szExeFile[..entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(0)],
+                );
+                if n.trim_end_matches(".exe").eq_ignore_ascii_case(&want) {
+                    pid = entry.th32ProcessID;
+                    break;
+                }
+                if Process32NextW(snap, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+        if pid == 0 {
+            return None;
+        }
+
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        // MAX_PATH buffer: a longer image path fails the call rather than
+        // truncating, so we return None and `resolve` falls to runtime detect.
+        let mut buf = [0u16; 260];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(
+            h,
+            PROCESS_NAME_FORMAT(0),
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
+        let _ = CloseHandle(h);
+        if !ok || len == 0 {
+            return None;
+        }
+        Some(PathBuf::from(String::from_utf16_lossy(&buf[..len as usize])))
+    }
+}
+
+#[cfg(not(windows))]
+fn running_process_path(_name: &str) -> Option<PathBuf> {
+    None
+}
+
+#[cfg(not(windows))]
+fn detect(_process_name: &str) -> Bitness {
+    Bitness::Unknown
+}
+
+/// Ordered bitness resolution. The returned &str names the source, for logs
+/// and the GUI label.
+///
+///   1. PE header from the resolved path — correct even if the target has
+///      never run, which is what makes `-w` work.
+///   2. Runtime detection — covers a RUNNING PROCESS target whose PE we could
+///      not read (no path resolved, or the file is unreadable/not a PE).
+///      Deliberately NOT tried for Service targets: `detect` looks up a
+///      process name, and a service name is not one (Spooler -> spoolsv.exe),
+///      so it would only ever burn a Toolhelp snapshot to return Unknown.
+///   3. Unknown — caller warns loudly and falls back to procdump64.exe.
+pub fn resolve(cfg: &Config) -> (Bitness, &'static str) {
+    if let Some(p) = resolve_target_path(cfg) {
+        let b = bitness_from_pe(&p);
+        if b != Bitness::Unknown {
+            return (b, "PE header");
+        }
+    }
+    if cfg.target_type == TargetType::Process {
+        let b = detect(&cfg.target_name);
+        if b != Bitness::Unknown {
+            return (b, "running process");
+        }
+    }
+    (Bitness::Unknown, "unresolved")
 }
 
 pub struct BinaryChoice {
@@ -536,5 +745,255 @@ mod tests {
     fn image_path_rejects_empty() {
         assert_eq!(parse_image_path(""), None);
         assert_eq!(parse_image_path("   "), None);
+    }
+
+    // ------------------------------------------------------------ task 3 --
+
+    #[test]
+    fn os_is_64_is_true_on_this_dev_machine() {
+        // The build/test host is x64; this guards a regression in the env parsing.
+        assert!(os_is_64());
+    }
+
+    #[test]
+    fn os_is_64_from_covers_every_arm() {
+        // The test above cannot fail on this host (every arm but one returns
+        // true). This table is where os_is_64's logic is actually pinned.
+        assert!(os_is_64_from(Some("AMD64"), None), "native x64");
+        assert!(os_is_64_from(Some("ARM64"), None), "native arm64");
+        assert!(!os_is_64_from(Some("x86"), None), "genuine 32-bit OS");
+        assert!(!os_is_64_from(Some("X86"), None), "casing must not flip the answer");
+        assert!(os_is_64_from(Some("x86"), Some("AMD64")), "32-bit process under WOW64");
+        assert!(os_is_64_from(None, None), "unreadable env -> assume 64-bit");
+    }
+
+    /// Shape of a real `reg.exe query ... /v ImagePath` response.
+    fn reg_output(line: &str) -> String {
+        format!(
+            "\r\nHKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\Test\r\n    {line}\r\n\r\n"
+        )
+    }
+
+    #[test]
+    fn reg_output_yields_the_image_path() {
+        // Uses the test exe (guaranteed to exist) so the .exists() gate passes.
+        let me = std::env::current_exe().unwrap();
+        let out = reg_output(&format!("ImagePath    REG_EXPAND_SZ    {}", me.display()));
+        assert_eq!(image_path_from_reg_output(&out), Some(me));
+    }
+
+    #[test]
+    fn reg_output_rejects_a_similarly_named_value() {
+        // A bare starts_with("ImagePath") reads ImagePathBackup's data as ours.
+        // Rejected because "Backup" lands in the REG_* type slot.
+        let me = std::env::current_exe().unwrap();
+        let out = reg_output(&format!("ImagePathBackup    REG_SZ    {}", me.display()));
+        assert_eq!(image_path_from_reg_output(&out), None);
+    }
+
+    #[test]
+    fn reg_output_rejects_a_missing_type_token() {
+        // Kills the starts_with("REG_") check. Without it the type slot eats
+        // the drive letter and the rest parses as a plausible-looking path.
+        let me = std::env::current_exe().unwrap();
+        let out = reg_output(&format!("ImagePath    NOTAREGTYPE    {}", me.display()));
+        assert_eq!(image_path_from_reg_output(&out), None);
+    }
+
+    #[test]
+    fn reg_output_rejects_a_driver_style_image_path() {
+        // Task 2 carry-forward: no ".exe" token, so parse_image_path returns
+        // the whole string (arguments included) and the path is relative.
+        // Only the .exists() gate stops this reaching bitness_from_pe.
+        let out = reg_output(r"ImagePath    REG_EXPAND_SZ    system32\DRIVERS\pdm_no_such.sys");
+        assert_eq!(image_path_from_reg_output(&out), None);
+    }
+
+    #[test]
+    fn reg_output_rejects_a_nonexistent_exe() {
+        let out = reg_output(r"ImagePath    REG_EXPAND_SZ    C:\pdm_no_such_dir\nope.exe");
+        assert_eq!(image_path_from_reg_output(&out), None);
+    }
+
+    #[test]
+    fn reg_output_rejects_svchost_hosted_services() {
+        // A shared host's PE says nothing about the hosted service, so this
+        // must be None (falls through to runtime detection), NOT the x64
+        // answer svchost.exe's own header would give.
+        let out = reg_output(r"ImagePath    REG_EXPAND_SZ    %SystemRoot%\system32\svchost.exe -k netsvcs -p");
+        assert_eq!(image_path_from_reg_output(&out), None);
+        // ...and svchost.exe really does exist, so .exists() is not what
+        // rejected it — the svchost rule is.
+        let svchost = std::path::PathBuf::from(std::env::var("SystemRoot").unwrap())
+            .join(r"system32\svchost.exe");
+        assert!(svchost.exists(), "precondition: {} must exist", svchost.display());
+    }
+
+    #[test]
+    fn reg_output_with_no_image_path_value_is_none() {
+        assert_eq!(image_path_from_reg_output(""), None);
+        assert_eq!(image_path_from_reg_output(&reg_output("Start    REG_DWORD    0x2")), None);
+    }
+
+    #[test]
+    fn service_image_path_resolves_a_real_windows_service() {
+        // Spooler exists on every Windows host and is a standalone exe, not a
+        // svchost-hosted service.
+        match service_image_path("Spooler") {
+            Some(p) => {
+                let s = p.to_string_lossy().to_ascii_lowercase();
+                assert!(s.ends_with("spoolsv.exe"), "unexpected ImagePath: {s}");
+                assert!(p.exists(), "resolved path does not exist: {s}");
+            }
+            None => eprintln!("skipping: Spooler service not present"),
+        }
+    }
+
+    #[test]
+    fn service_image_path_returns_none_for_unknown_service() {
+        assert_eq!(service_image_path("PdmDefinitelyNotAService"), None);
+    }
+
+    #[test]
+    fn service_image_path_returns_none_for_a_real_svchost_service() {
+        // Proves service_image_path is actually wired to the svchost rule, not
+        // just that the rule exists in the helper. Skips rather than fails if
+        // this host does not host Winmgmt in svchost.
+        let out = crate::collect::run_tool(
+            "reg.exe",
+            &["query", r"HKLM\SYSTEM\CurrentControlSet\Services\Winmgmt", "/v", "ImagePath"],
+        );
+        let hosted = match &out {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                .to_ascii_lowercase()
+                .contains("svchost.exe"),
+            _ => false,
+        };
+        if !hosted {
+            eprintln!("skipping: Winmgmt is not svchost-hosted on this host");
+            return;
+        }
+        assert_eq!(service_image_path("Winmgmt"), None);
+    }
+
+    /// The running test binary's exe name — a process guaranteed to be running
+    /// while these tests execute, so `detect` can always resolve it.
+    fn my_process_name() -> String {
+        std::env::current_exe()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+    }
+
+    #[test]
+    fn resolve_target_path_prefers_a_valid_configured_path() {
+        let me = std::env::current_exe().unwrap();
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = "PdmDefinitelyNotRunning.exe".into();
+        c.target_path = me.to_string_lossy().to_string();
+        assert_eq!(resolve_target_path(&c), Some(me));
+    }
+
+    #[test]
+    fn resolve_target_path_ignores_a_stale_configured_path() {
+        // Kills the `p.exists()` guard in the Process branch: a config left
+        // over from an uninstalled build must fall through to the live lookup,
+        // not hand a dead path to bitness_from_pe.
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = my_process_name();
+        c.target_path = r"C:\pdm_no_such_dir\stale.exe".into();
+        let p = resolve_target_path(&c).expect("should fall back to the running process");
+        // Case-insensitive: QueryFullProcessImageNameW and current_exe() can
+        // disagree on drive-letter/component casing.
+        assert!(
+            p.to_string_lossy()
+                .eq_ignore_ascii_case(&std::env::current_exe().unwrap().to_string_lossy()),
+            "got {}",
+            p.display()
+        );
+    }
+
+    #[test]
+    fn resolve_target_path_is_none_when_nothing_resolves() {
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = "PdmDefinitelyNotRunning.exe".into();
+        assert_eq!(resolve_target_path(&c), None);
+    }
+
+    #[test]
+    fn resolve_uses_pe_for_a_service_target() {
+        let mut c = Config::default();
+        c.target_type = TargetType::Service;
+        c.target_name = "Spooler".into();
+        if service_image_path("Spooler").is_none() {
+            eprintln!("skipping: Spooler not present");
+            return;
+        }
+        let (b, source) = resolve(&c);
+        // spoolsv.exe is x64 on an x64 host.
+        assert_eq!(b, Bitness::X64);
+        assert_eq!(source, "PE header");
+    }
+
+    #[test]
+    fn resolve_prefers_the_pe_over_runtime_detect() {
+        // The two sources DISAGREE here: target_path is a 32-bit PE while
+        // target_name is this very test process (running, 64-bit). Correct
+        // ordering answers X86/"PE header"; swap the two blocks in `resolve`
+        // and this returns X64/"running process".
+        let wow = std::path::PathBuf::from(r"C:\Windows\SysWOW64\cmd.exe");
+        if !wow.exists() {
+            eprintln!("skipping: {} not present on this host", wow.display());
+            return;
+        }
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = my_process_name();
+        c.target_path = wow.to_string_lossy().to_string();
+        assert_eq!(detect(&c.target_name), Bitness::X64, "precondition: we are a running x64 process");
+        assert_eq!(resolve(&c), (Bitness::X86, "PE header"));
+    }
+
+    #[test]
+    fn resolve_falls_back_to_runtime_detect_when_the_pe_is_unreadable() {
+        // Proves step 2 is reachable and that the `b != Unknown` guard on step
+        // 1 matters: the configured path exists but is not a PE, so the PE
+        // read yields Unknown and runtime detection must supply the answer.
+        let junk = std::env::temp_dir().join("pdm_resolve_notpe.txt");
+        std::fs::write(&junk, b"definitely not a PE").unwrap();
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = my_process_name();
+        c.target_path = junk.to_string_lossy().to_string();
+        let got = resolve(&c);
+        let _ = std::fs::remove_file(&junk);
+        assert_eq!(got, (Bitness::X64, "running process"));
+    }
+
+    #[test]
+    fn resolve_does_not_runtime_detect_a_service_target() {
+        // Kills the `target_type == Process` gate on step 2. The target name
+        // is a RUNNING process, but it is declared as a service — the registry
+        // lookup finds no such key, and detect() must not be consulted.
+        let mut c = Config::default();
+        c.target_type = TargetType::Service;
+        c.target_name = my_process_name();
+        assert_eq!(detect(&c.target_name), Bitness::X64, "precondition: detect would answer");
+        assert_eq!(resolve(&c), (Bitness::Unknown, "unresolved"));
+    }
+
+    #[test]
+    fn resolve_falls_back_to_unknown_for_an_unresolvable_target() {
+        let mut c = Config::default();
+        c.target_type = TargetType::Process;
+        c.target_name = "PdmDefinitelyNotRunning.exe".into();
+        let (b, source) = resolve(&c);
+        assert_eq!(b, Bitness::Unknown);
+        assert_eq!(source, "unresolved");
     }
 }
