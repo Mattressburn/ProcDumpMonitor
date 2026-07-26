@@ -5,10 +5,13 @@
 
 - **Project Name:** ProcDumpMonitor
 - **What This Project Is:** A Windows utility that watches a target process or service and captures ProcDump crash/hang/resource dumps automatically, with retention policies and email/webhook notifications. Configured through a 6-step GUI wizard that installs a Scheduled Task running the monitor.
-- **Primary Objective:** A single small (~1.86MB) self-contained Rust exe that replaces the legacy C# app: monitor + CLI + setup-wizard GUI, reliable on real deployments (C-CURE / en-US environments).
+- **Primary Objective:** A single small (~1.97MB) self-contained Rust exe that replaces the legacy C# app: monitor + CLI + mode-based GUI (monitor + integrated CCURE log collector), reliable on real deployments (C-CURE / en-US environments).
 - **Strategic Intent:** Kill the .NET runtime dependency and installer complexity; one exe a field tech can drop on a box, run elevated, and configure in under a minute.
 - **Hard Constraints:**
-  - GUI stays `native-windows-gui` 1.0.13 (NOT egui/iced — binary size gate ~1.9MB, `opt-level=z`, lto, `panic="abort"`).
+  - GUI stays `native-windows-gui` 1.0.13 (NOT egui/iced — `opt-level=z`, lto, `panic="abort"`).
+  - **Binary size gate: ~2.0MB.** Raised from ~1.9MB and accepted by the user on
+    2026-07-25 when the log-collector subsystem + 2 dialogs took the release exe
+    1.86MB → 1.97MB. Build settings unchanged; this is headroom, not slippage.
   - Release manifest must keep `requireAdministrator` (build.rs panics if `PDM_TEST_MANIFEST=1` on a release build).
   - All GUI coordinates LOGICAL px (nwg `high-dpi` feature scales everything); the design system in `docs/plans/gui-redesign-plan.md` is binding for layout work.
   - Rust toolchain: `%USERPROFILE%\.cargo\bin\cargo.exe` (not on PATH), run from `rust/`.
