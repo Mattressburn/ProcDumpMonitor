@@ -497,12 +497,39 @@ mod tests {
     }
 
     #[test]
+    fn image_path_uppercase_exe_keeps_original_casing() {
+        // Guards the `to_ascii_lowercase()` in the unquoted branch. It exists
+        // ONLY to find the token; the slice is taken from the ORIGINAL, so
+        // casing survives. A plain `s.find(".exe")` misses this entirely and
+        // returns the arguments too — which is the "modernization" the code
+        // comment there warns about.
+        assert_eq!(
+            parse_image_path(r"C:\WINDOWS\SYSTEM32\SVCHOST.EXE -k netsvcs"),
+            Some(std::path::PathBuf::from(r"C:\WINDOWS\SYSTEM32\SVCHOST.EXE"))
+        );
+    }
+
+    #[test]
     fn image_path_expands_environment_variables() {
-        // %SystemRoot% is set on every Windows host.
-        let got = parse_image_path(r"%SystemRoot%\system32\services.exe").unwrap();
-        let s = got.to_string_lossy().to_ascii_lowercase();
-        assert!(!s.contains('%'), "env var was not expanded: {s}");
-        assert!(s.ends_with(r"\system32\services.exe"), "unexpected: {s}");
+        // %SystemRoot% is set on every Windows host. Assert the ACTUAL expanded
+        // value: "no % remains and it ends with the suffix" would also pass for
+        // an expand_env that simply deleted the token.
+        assert_eq!(
+            parse_image_path(r"%SystemRoot%\system32\services.exe"),
+            Some(std::path::PathBuf::from(
+                std::env::var("SystemRoot").unwrap() + r"\system32\services.exe"
+            ))
+        );
+    }
+
+    #[test]
+    fn image_path_keeps_unknown_env_var_literal() {
+        // expand_env's Err(_) arm: an unset variable stays literal rather than
+        // silently collapsing to a wrong-but-plausible path.
+        assert_eq!(
+            parse_image_path(r"%PDM_NO_SUCH_VAR%\svc.exe"),
+            Some(std::path::PathBuf::from(r"%PDM_NO_SUCH_VAR%\svc.exe"))
+        );
     }
 
     #[test]
