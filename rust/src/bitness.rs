@@ -4,8 +4,57 @@
 
 use std::path::{Path, PathBuf};
 
+const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
+const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
+const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bitness { Unknown, X86, X64 }
+
+/// Read `IMAGE_FILE_HEADER.Machine` from a PE on disk.
+///
+/// This is what makes `-w` (wait-for-process) correct: it needs no running
+/// process, so a target that has never started still resolves.
+///
+/// Layout: `e_lfanew` is a LE u32 at 0x3C pointing at the PE signature
+/// "PE\0\0"; `IMAGE_FILE_HEADER` follows it and opens with a LE u16 Machine.
+pub fn pe_machine(path: &Path) -> Option<u16> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut f = std::fs::File::open(path).ok()?;
+
+    let mut lfanew = [0u8; 4];
+    f.seek(SeekFrom::Start(0x3C)).ok()?;
+    f.read_exact(&mut lfanew).ok()?;
+    let off = u32::from_le_bytes(lfanew) as u64;
+
+    // Guard against a hostile/garbage offset before seeking.
+    let len = f.metadata().ok()?.len();
+    if off.checked_add(6)? > len {
+        return None;
+    }
+
+    let mut head = [0u8; 6]; // "PE\0\0" + Machine
+    f.seek(SeekFrom::Start(off)).ok()?;
+    f.read_exact(&mut head).ok()?;
+    if &head[0..4] != b"PE\0\0" {
+        return None;
+    }
+    Some(u16::from_le_bytes([head[4], head[5]]))
+}
+
+/// Map a PE machine value to the binary-selection decision.
+///
+/// NOTE: ARM64 and AMD64 both map to X64. That is correct for choosing a
+/// ProcDump binary, but it means the two are indistinguishable here — do not
+/// assert anything stronger.
+pub fn bitness_from_pe(path: &Path) -> Bitness {
+    match pe_machine(path) {
+        Some(IMAGE_FILE_MACHINE_I386) => Bitness::X86,
+        Some(IMAGE_FILE_MACHINE_AMD64) | Some(IMAGE_FILE_MACHINE_ARM64) => Bitness::X64,
+        _ => Bitness::Unknown,
+    }
+}
 
 pub struct BinaryChoice {
     pub actual: PathBuf,
@@ -171,10 +220,6 @@ unsafe fn classify(h: windows::Win32::Foundation::HANDLE) -> Bitness {
     use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
     use windows::Win32::System::Threading::IsWow64Process;
 
-    const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
-    const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
-    const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
-
     // Dynamic lookup — Win10 1607+ only, absent on Server 2016 RTM (14393).
     type IsWow64Process2Fn = unsafe extern "system" fn(HANDLE, *mut u16, *mut u16) -> BOOL;
     if let Ok(kernel32) = GetModuleHandleA(s!("kernel32.dll")) {
@@ -256,5 +301,49 @@ mod tests {
     fn on_32bit_os_only_procdump_exe() {
         let d = dir_with(&["procdump.exe", "procdump64.exe"]);
         assert!(select_binary(Bitness::X64, &d, false).actual.ends_with("procdump.exe"));
+    }
+
+    #[test]
+    fn pe_machine_reads_our_own_exe_as_64bit() {
+        // current_exe() is the test binary itself: a guaranteed-present x64 PE
+        // with no system-path assumption.
+        let me = std::env::current_exe().unwrap();
+        assert_eq!(pe_machine(&me), Some(0x8664));
+        assert_eq!(bitness_from_pe(&me), Bitness::X64);
+    }
+
+    #[test]
+    fn pe_machine_reads_wow64_binary_as_32bit() {
+        // ponytail: SysWOW64 contents vary on ARM64 hosts, so skip rather than
+        // fail if absent. cmd.exe is chosen over notepad.exe because notepad is
+        // being replaced by the Store package and may be a stub or missing.
+        let p = std::path::PathBuf::from(r"C:\Windows\SysWOW64\cmd.exe");
+        if !p.exists() {
+            eprintln!("skipping: {} not present on this host", p.display());
+            return;
+        }
+        assert_eq!(pe_machine(&p), Some(0x014C));
+        assert_eq!(bitness_from_pe(&p), Bitness::X86);
+    }
+
+    #[test]
+    fn pe_machine_rejects_non_pe_and_missing_files() {
+        let d = std::env::temp_dir().join("pdm_pe_notpe.txt");
+        std::fs::write(&d, b"this is not a PE file at all, not even close").unwrap();
+        assert_eq!(pe_machine(&d), None);
+        assert_eq!(bitness_from_pe(&d), Bitness::Unknown);
+        let _ = std::fs::remove_file(&d);
+
+        let missing = std::env::temp_dir().join("pdm_pe_does_not_exist.exe");
+        assert_eq!(pe_machine(&missing), None);
+    }
+
+    #[test]
+    fn pe_machine_rejects_truncated_file() {
+        // A file shorter than the DOS header must not panic or index out of range.
+        let d = std::env::temp_dir().join("pdm_pe_short.bin");
+        std::fs::write(&d, b"MZ").unwrap();
+        assert_eq!(pe_machine(&d), None);
+        let _ = std::fs::remove_file(&d);
     }
 }
