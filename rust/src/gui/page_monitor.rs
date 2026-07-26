@@ -16,6 +16,22 @@ use super::theme;
 
 const DUMP_TYPES: [&str; 4] = ["Full", "MiniPlus", "Mini", "ThreadDump"];
 
+/// Shown at index 0 so a required field never reads as blank. CBS_DROPDOWNLIST
+/// cannot render true placeholder text, so a real row is the Win32 answer.
+const TARGET_HINT: &str = "- Select a process or service -";
+
+/// Preferred default targets, exact (case-insensitive) exe-name match, highest
+/// priority first. Used only when nothing is already chosen.
+///
+/// EXACT match, not substring: SoftwareHouse.CrossFire.Server.exe,
+/// .ServerComponentFramework.exe, .ImportWatcherService.exe and
+/// .ReportServerService.exe all run on a real C-CURE server and share the
+/// prefix, so `contains("crossfire")` would pick whichever sorted first.
+///
+/// ponytail: one entry, no config-driven priority system. Add entries here if
+/// other targets earn a default.
+const PREFERRED_TARGETS: &[&str] = &["SoftwareHouse.CrossFire.Server.exe"];
+
 /// One entry in the combined target dropdown.
 #[derive(Clone)]
 pub struct TargetEntry {
@@ -382,48 +398,92 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage
     page
 }
 
+/// Build the parallel (labels, entries) vectors for the target combo.
+/// PROCESSES FIRST (they're the common case and would otherwise be buried
+/// under 150+ services), then running services; `show_stopped` appends the
+/// stopped ones.
+///
+/// Pure so the index alignment the combo depends on is testable at all:
+/// `selected_entry()` indexes `entries` by the combo's selection index, so a
+/// label that has no entry of its own silently selects the WRONG target.
+fn build_target_list(
+    procs: &[String],
+    svcs: &[services::ServiceInfo],
+    show_stopped: bool,
+) -> (Vec<String>, Vec<TargetEntry>) {
+    // Index 0 is the hint row, and it must occupy a slot in BOTH vectors. Its
+    // empty name makes effective_target() treat it as "nothing selected".
+    let mut labels = vec![TARGET_HINT.to_string()];
+    let mut entries = vec![TargetEntry { name: String::new(), is_service: false }];
+
+    // Running processes (Toolhelp only enumerates live ones). Skip the PID-0
+    // pseudo-process: "[System Process]" isn't a real image name and can never
+    // be dumped, but sorts first and looks like the default pick.
+    for p in procs.iter().filter(|p| !p.starts_with('[')) {
+        labels.push(format!("Proc: {p}"));
+        entries.push(TargetEntry { name: p.clone(), is_service: false });
+    }
+    for s in svcs.iter().filter(|s| s.running) {
+        labels.push(format!("Svc: {} ({})", s.display, s.name));
+        entries.push(TargetEntry { name: s.name.clone(), is_service: true });
+    }
+    if show_stopped {
+        for s in svcs.iter().filter(|s| !s.running) {
+            labels.push(format!("Svc: {} ({}) - stopped", s.display, s.name));
+            entries.push(TargetEntry { name: s.name.clone(), is_service: true });
+        }
+    }
+    (labels, entries)
+}
+
+/// Which combo index to select over a freshly built `entries`.
+///
+/// Precedence: an already-chosen target (`prior`: the combo's pick or the
+/// manual override) wins and is NEVER overridden, then the first running
+/// PREFERRED_TARGETS process, then the hint row. `prior` empty/blank means
+/// nothing is chosen — the hint row's name is empty exactly so it lands here.
+///
+/// Falling back to index 0 is safe only because `build_target_list` always
+/// pushes the hint row first.
+fn target_selection(entries: &[TargetEntry], prior: Option<&str>) -> usize {
+    if let Some(p) = prior.map(str::trim).filter(|p| !p.is_empty()) {
+        // A prior pick that vanished from the list falls back to the hint
+        // rather than to the default: the user's choice is gone, so say so.
+        return entries.iter().position(|e| e.name.eq_ignore_ascii_case(p)).unwrap_or(0);
+    }
+    PREFERRED_TARGETS
+        .iter()
+        .find_map(|want| {
+            entries.iter().position(|e| !e.is_service && e.name.eq_ignore_ascii_case(want))
+        })
+        .unwrap_or(0)
+}
+
 impl MonitorPage {
     // ---- Target dropdown --------------------------------------------------
 
-    /// Rebuild the combined target list. PROCESSES FIRST (they're the common
-    /// case and would otherwise be buried under 150+ services), then running
-    /// services; "Include stopped services" appends the stopped ones. Keeps
-    /// the current selection by name when it survives the refresh.
+    /// Rebuild the combined target list, keeping the current choice when it
+    /// survives the refresh and otherwise applying the default.
     pub fn refresh_targets(&self) {
-        let show_stopped = checked(&self.chk_show_all);
-        let selected = self.selected_entry().map(|e| e.name.clone());
+        // What is already chosen: the combo's pick, else a manual override from
+        // the Advanced dialog (also a deliberate choice — and it WINS in
+        // effective_target(), so defaulting the combo past it would put a
+        // process on screen that isn't the one being dumped). The hint row's
+        // empty name is not a choice, so a Refresh after CrossFire starts
+        // applies the default instead of sticking on the hint.
+        let prior = self
+            .selected_entry()
+            .map(|e| e.name)
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| self.manual_target.borrow().trim().to_string());
 
-        let mut entries: Vec<TargetEntry> = Vec::new();
-        let mut labels: Vec<String> = Vec::new();
-
-        // Running processes (Toolhelp only enumerates live ones). Skip the
-        // PID-0 pseudo-process: "[System Process]" isn't a real image name and
-        // can never be dumped, but sorts first and looks like the default pick.
-        for p in bitness::list_process_names() {
-            if p.starts_with('[') {
-                continue;
-            }
-            labels.push(format!("Proc: {p}"));
-            entries.push(TargetEntry { name: p, is_service: false });
-        }
-        // Services, running first so the useful ones stay near the top.
-        let all_services = services::list();
-        for s in all_services.iter().filter(|s| s.running) {
-            labels.push(format!("Svc: {} ({})", s.display, s.name));
-            entries.push(TargetEntry { name: s.name.clone(), is_service: true });
-        }
-        if show_stopped {
-            for s in all_services.iter().filter(|s| !s.running) {
-                labels.push(format!("Svc: {} ({}) - stopped", s.display, s.name));
-                entries.push(TargetEntry { name: s.name.clone(), is_service: true });
-            }
-        }
+        let (labels, entries) = build_target_list(
+            &bitness::list_process_names(),
+            &services::list(),
+            checked(&self.chk_show_all),
+        );
         self.cmb_target.set_collection(labels);
-        if let Some(sel) = selected {
-            if let Some(i) = entries.iter().position(|e| e.name.eq_ignore_ascii_case(&sel)) {
-                self.cmb_target.set_selection(Some(i));
-            }
-        }
+        self.cmb_target.set_selection(Some(target_selection(&entries, Some(&prior))));
         *self.entries.borrow_mut() = entries;
     }
 
@@ -619,6 +679,23 @@ impl MonitorPage {
         }
         *self.manual_target.borrow_mut() =
             if found { String::new() } else { cfg.target_name.clone() };
+        if !found && cfg.target_name.is_empty() {
+            // No saved target at all: re-apply the same default refresh_targets
+            // picked, so the combo shows the hint row instead of reading blank.
+            //
+            // NOT a hard `Some(0)`: load() runs AFTER build()'s refresh_targets
+            // (mod.rs:247 then :253, and again on every switch back to this
+            // page), so pinning the hint here would clobber the CrossFire
+            // default on every fresh install and kill the feature silently.
+            //
+            // ponytail: no unit test reaches this (it needs live nwg controls),
+            // and this dev box has no C-CURE, so the ordering is guarded by
+            // review only. Upgrade path: assert the combo's selected text in
+            // scripts/gui-e2e.ps1 on a host where a preferred target runs
+            // (Task 8 owns that script).
+            let i = target_selection(&self.entries.borrow(), None);
+            self.cmb_target.set_selection(Some(i));
+        }
 
         self.load_fields(cfg);
 
@@ -1117,6 +1194,119 @@ mod tests {
             bitness_text(&c),
             "64-bit process -> procdump64.exe (via PE header)"
         );
+    }
+
+    // ---- target list + default selection ----------------------------------
+
+    const CF_SERVER: &str = "SoftwareHouse.CrossFire.Server.exe";
+
+    fn proc(n: &str) -> TargetEntry {
+        TargetEntry { name: n.into(), is_service: false }
+    }
+    fn svc(n: &str) -> TargetEntry {
+        TargetEntry { name: n.into(), is_service: true }
+    }
+    fn hint() -> TargetEntry {
+        TargetEntry { name: String::new(), is_service: false }
+    }
+    fn svc_info(name: &str, running: bool) -> services::ServiceInfo {
+        services::ServiceInfo { name: name.into(), display: format!("{name} Display"), running }
+    }
+
+    /// All four SoftwareHouse.CrossFire.* processes a real C-CURE server runs.
+    /// Order matters: ImportWatcherService comes FIRST, so a substring match on
+    /// "crossfire" picks the wrong one and the test below fails.
+    fn crossfire_entries() -> Vec<TargetEntry> {
+        vec![
+            hint(),
+            proc("SoftwareHouse.CrossFire.ImportWatcherService.exe"),
+            proc("SoftwareHouse.CrossFire.ReportServerService.exe"),
+            proc(CF_SERVER),
+            proc("SoftwareHouse.CrossFire.ServerComponentFramework.exe"),
+            proc("notepad.exe"),
+        ]
+    }
+
+    #[test]
+    fn default_matches_the_crossfire_server_exactly_not_by_substring() {
+        let e = crossfire_entries();
+        let i = target_selection(&e, None);
+        // Asserted by NAME, not index: an index-only assertion passes on a
+        // list that happens to put the wrong sibling in the same slot.
+        assert_eq!(e[i].name, CF_SERVER, "picked {} instead", e[i].name);
+        assert_eq!(i, 3);
+    }
+
+    #[test]
+    fn default_ignores_case_and_skips_same_named_services() {
+        assert_eq!(target_selection(&[hint(), proc("softwarehouse.crossfire.SERVER.EXE")], None), 1);
+        // is_service guard: a SERVICE named like the preferred process is not
+        // the preferred process (different TargetType => different dump path).
+        assert_eq!(target_selection(&[hint(), svc(CF_SERVER)], None), 0);
+    }
+
+    #[test]
+    fn a_prior_choice_is_never_overridden_by_the_default() {
+        let e = crossfire_entries();
+        // CrossFire IS running and would be the default; the explicit choice wins.
+        assert_eq!(e[target_selection(&e, Some("notepad.exe"))].name, "notepad.exe");
+        // Case-insensitively, and for a service too.
+        let s = vec![hint(), proc(CF_SERVER), svc("CrossFireServer")];
+        assert_eq!(target_selection(&s, Some("crossfireserver")), 2);
+    }
+
+    #[test]
+    fn the_hint_row_is_not_a_prior_choice() {
+        // refresh_targets passes the selected entry's name straight through;
+        // the hint row's name is empty. If that counted as a choice, clicking
+        // Refresh once CrossFire started would stick on the hint forever.
+        let e = crossfire_entries();
+        assert_eq!(e[target_selection(&e, Some(""))].name, CF_SERVER);
+        assert_eq!(e[target_selection(&e, Some("   "))].name, CF_SERVER);
+    }
+
+    #[test]
+    fn without_a_preferred_target_or_a_match_the_hint_row_stays() {
+        // The normal case on this dev box: no C-CURE installed.
+        assert_eq!(target_selection(&[hint(), proc("notepad.exe"), svc("Spooler")], None), 0);
+        // A prior pick that vanished from the list falls back to the hint, not
+        // to the default: silently retargeting a dump is worse than a blank.
+        let e = crossfire_entries();
+        assert_eq!(target_selection(&e, Some("gone.exe")), 0);
+    }
+
+    #[test]
+    fn build_target_list_keeps_labels_and_entries_index_aligned() {
+        let procs = vec!["[System Process]".to_string(), CF_SERVER.to_string(), "notepad.exe".into()];
+        let svcs = vec![svc_info("RunningSvc", true), svc_info("StoppedSvc", false)];
+
+        for show_stopped in [false, true] {
+            let (labels, entries) = build_target_list(&procs, &svcs, show_stopped);
+            assert_eq!(labels.len(), entries.len(), "parallel vectors diverged");
+            assert_eq!(labels[0], TARGET_HINT);
+            assert!(entries[0].name.is_empty(), "hint row must read as no selection");
+            // Every non-hint label must carry ITS OWN entry's name.
+            for (l, e) in labels.iter().zip(entries.iter()).skip(1) {
+                assert!(l.contains(&e.name), "label {l:?} does not match entry {:?}", e.name);
+            }
+            assert!(!labels.iter().any(|l| l.contains("[System Process]")));
+            assert_eq!(labels.iter().any(|l| l.contains("StoppedSvc")), show_stopped);
+            // Processes before services, so they aren't buried under 150+ svcs.
+            assert!(entries.iter().position(|e| e.is_service).unwrap() > 2);
+        }
+    }
+
+    #[test]
+    fn the_selected_index_addresses_the_crossfire_row_in_both_vectors() {
+        // End-to-end over the two pure halves: this is what the combo does, and
+        // it is the only assertion that fails if the hint row is pushed to
+        // `labels` but not to `entries` (every index would be off by one).
+        let procs = vec!["notepad.exe".to_string(), CF_SERVER.to_string()];
+        let (labels, entries) = build_target_list(&procs, &[svc_info("Spooler", true)], false);
+        let i = target_selection(&entries, None);
+        assert_eq!(entries[i].name, CF_SERVER);
+        assert!(!entries[i].is_service);
+        assert_eq!(labels[i], format!("Proc: {CF_SERVER}"));
     }
 
     #[test]

@@ -186,7 +186,7 @@ $sb = New-Object System.Text.StringBuilder 512
 [W.U32]::SendMessageW($comboH, 0x0148, 0, $sb) | Out-Null
 $first = $sb.ToString()
 Write-Host "probe: first entry = '$first'"
-if ($first -notlike 'Proc:*') { Fail "first target entry is not a process: '$first'" }
+if ($first -ne '- Select a process or service -') { Fail "first target entry is not the hint row: '$first'" }
 
 # The dropdown must be SCROLLABLE BY THE USER. nwg omits WS_VSCROLL (its
 # ComboBoxFlags has no scroll bit), which leaves the drop-down list capped at
