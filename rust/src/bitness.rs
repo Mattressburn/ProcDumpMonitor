@@ -346,4 +346,43 @@ mod tests {
         assert_eq!(pe_machine(&d), None);
         let _ = std::fs::remove_file(&d);
     }
+
+    /// A 64-byte DOS header: "MZ" at 0, `e_lfanew` as a LE u32 at 0x3C.
+    /// Long enough that the `e_lfanew` read succeeds, so execution reaches
+    /// the length guard and the signature check — which the short/text
+    /// fixtures above never do (they die at `read_exact` on a past-EOF seek).
+    fn dos_header(lfanew: u32) -> Vec<u8> {
+        let mut v = vec![0u8; 64];
+        v[0..2].copy_from_slice(b"MZ");
+        v[0x3C..0x40].copy_from_slice(&lfanew.to_le_bytes());
+        v
+    }
+
+    #[test]
+    fn pe_machine_rejects_garbage_lfanew_past_eof() {
+        // Reaches `off.checked_add(6)? > len` with a garbage offset past the end
+        // of a 64-byte file. ponytail: this pins the BEHAVIOUR, not the guard —
+        // mutation-tested, and deleting the guard still passes, because if
+        // off + 6 > len then read_exact of 6 bytes at off must hit EOF anyway.
+        // The guard is unfalsifiable-by-construction defense in depth at a
+        // file-parse trust boundary; kept deliberately. Nothing to add here.
+        let d = std::env::temp_dir().join("pdm_pe_badoff.bin");
+        std::fs::write(&d, dos_header(0xFFFF_FFF0)).unwrap();
+        assert_eq!(pe_machine(&d), None);
+        let _ = std::fs::remove_file(&d);
+    }
+
+    #[test]
+    fn pe_machine_rejects_bad_signature() {
+        // Covers `if &head[0..4] != b"PE\0\0"`: e_lfanew is in range and the
+        // 6 bytes there are readable, but the signature is wrong. 70 bytes so
+        // off(0x40) + 6 == len and the length guard passes.
+        let d = std::env::temp_dir().join("pdm_pe_badsig.bin");
+        let mut v = dos_header(0x40);
+        v.extend_from_slice(b"XX\0\0"); // where "PE\0\0" belongs
+        v.extend_from_slice(&[0x64, 0x86]); // a valid-looking AMD64 Machine
+        std::fs::write(&d, &v).unwrap();
+        assert_eq!(pe_machine(&d), None);
+        let _ = std::fs::remove_file(&d);
+    }
 }
