@@ -176,11 +176,15 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage
     // ---- Target ---------------------------------------------------------
     captions.push(mk_header(parent, "Target", 12, &header_font));
 
-    captions.push(mk_label(parent, "Service or process:", (PAD, 38), (190, 20)));
-    let cmb_target = mk_combo(parent, (FIELD_X, 40), (308, FIELD_H));
+    captions.push(mk_label(parent, "Process or service:", (PAD, 38), (190, 20)));
+    // HEIGHT IS THE DROPDOWN HEIGHT: Win32 uses a combobox's CreateWindowEx
+    // height for the control *with its list dropped down* (the closed control
+    // is always drawn one item tall). nwg passes `size` straight through, so
+    // the design-system 26 gave a list with no usable rows -- it looked like
+    // "scrolling is broken". 300 logical px shows ~11 rows, then scrolls.
+    let cmb_target = mk_combo(parent, (FIELD_X, 40), (308, 300));
     let btn_refresh = mk_button(parent, "Refresh", (548, 38), (100, 30));
-    let chk_show_all =
-        mk_check(parent, "Show stopped services and all processes", (FIELD_X, 74), (330, 22));
+    let chk_show_all = mk_check(parent, "Include stopped services", (FIELD_X, 74), (330, 22));
 
     // ---- Dump triggers & output -----------------------------------------
     captions.push(mk_header(parent, "Dump triggers & output", 104, &header_font));
@@ -312,25 +316,37 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> MonitorPage
 impl MonitorPage {
     // ---- Target dropdown --------------------------------------------------
 
-    /// Rebuild the Svc:/Proc: list. Running services always listed; stopped
-    /// services and the process list appear with "Show all". Keeps the
-    /// current selection by name when it survives the refresh.
+    /// Rebuild the combined target list. PROCESSES FIRST (they're the common
+    /// case and would otherwise be buried under 150+ services), then running
+    /// services; "Include stopped services" appends the stopped ones. Keeps
+    /// the current selection by name when it survives the refresh.
     pub fn refresh_targets(&self) {
-        let show_all = checked(&self.chk_show_all);
+        let show_stopped = checked(&self.chk_show_all);
         let selected = self.selected_entry().map(|e| e.name.clone());
 
         let mut entries: Vec<TargetEntry> = Vec::new();
         let mut labels: Vec<String> = Vec::new();
-        for s in services::list() {
-            if show_all || s.running {
-                labels.push(format!("Svc: {} ({})", s.display, s.name));
-                entries.push(TargetEntry { name: s.name, is_service: true });
+
+        // Running processes (Toolhelp only enumerates live ones). Skip the
+        // PID-0 pseudo-process: "[System Process]" isn't a real image name and
+        // can never be dumped, but sorts first and looks like the default pick.
+        for p in bitness::list_process_names() {
+            if p.starts_with('[') {
+                continue;
             }
+            labels.push(format!("Proc: {p}"));
+            entries.push(TargetEntry { name: p, is_service: false });
         }
-        if show_all {
-            for p in bitness::list_process_names() {
-                labels.push(format!("Proc: {p}"));
-                entries.push(TargetEntry { name: p, is_service: false });
+        // Services, running first so the useful ones stay near the top.
+        let all_services = services::list();
+        for s in all_services.iter().filter(|s| s.running) {
+            labels.push(format!("Svc: {} ({})", s.display, s.name));
+            entries.push(TargetEntry { name: s.name.clone(), is_service: true });
+        }
+        if show_stopped {
+            for s in all_services.iter().filter(|s| !s.running) {
+                labels.push(format!("Svc: {} ({}) - stopped", s.display, s.name));
+                entries.push(TargetEntry { name: s.name.clone(), is_service: true });
             }
         }
         self.cmb_target.set_collection(labels);

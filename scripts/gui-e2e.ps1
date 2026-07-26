@@ -26,6 +26,8 @@ Add-Type -Namespace W -Name U32 -MemberDefinition @'
 [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, System.UIntPtr e);
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h);
 [DllImport("user32.dll")] public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint Msg, System.UIntPtr wParam, System.IntPtr lParam, uint flags, uint timeoutMs, out System.UIntPtr result);
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int SendMessageW(System.IntPtr hWnd, uint Msg, int wParam, System.Text.StringBuilder lParam);
+[DllImport("user32.dll", EntryPoint="SendMessageW")] public static extern int SendMessageInt(System.IntPtr hWnd, uint Msg, int wParam, int lParam);
 '@
 
 $Exe = (Resolve-Path $Exe).Path
@@ -158,18 +160,38 @@ function Find-Dialog([string]$title) {
 # =====================  Monitor page  =====================
 Shot '01-monitor'
 
-# Deterministic: the combined target dropdown is populated (running services).
+# Deterministic: the combined target dropdown is populated (processes +
+# running services).
 $combo = Require (Top-Combo) "target combo"
+$comboH = [IntPtr]$combo.Current.NativeWindowHandle
 $c0 = Combo-Count $combo
-Write-Host "probe: target combo has $c0 running-service entries"
-if ($c0 -lt 1) { Fail "target combo empty (expected running services)" }
+Write-Host "probe: target combo has $c0 process + running-service entries"
+if ($c0 -lt 1) { Fail "target combo empty (expected processes and services)" }
 
-# "Show stopped services and all processes" must ADD entries (stopped svcs +
-# processes). Adjudicated by count, not pixels.
-$showall = Require (Find-El 'BUTTON' '*all processes*') "show-all checkbox"
+# PROCESSES MUST COME FIRST (they'd be unreachable under 150+ services).
+# CB_GETLBTEXT = 0x0148.
+$sb = New-Object System.Text.StringBuilder 512
+[W.U32]::SendMessageW($comboH, 0x0148, 0, $sb) | Out-Null
+$first = $sb.ToString()
+Write-Host "probe: first entry = '$first'"
+if ($first -notlike 'Proc:*') { Fail "first target entry is not a process: '$first'" }
+
+# The dropdown LIST must be tall enough to show rows and scroll. A Win32
+# combobox uses its create-height for the dropped-down list, so a 26px combo
+# silently yields an unusable list. CB_SETTOPINDEX (0x015C) to a late row then
+# CB_GETTOPINDEX (0x015B) proves the list scrolls; a zero-height list can't.
+$target = [Math]::Min(40, $c0 - 1)
+[W.U32]::SendMessageInt($comboH, 0x015C, $target, 0) | Out-Null
+$top = [W.U32]::SendMessageInt($comboH, 0x015B, 0, 0)
+Write-Host "probe: dropdown scrolled to top index $top (asked $target)"
+if ($top -le 0) { Fail "target dropdown did not scroll (list height too small?)" }
+[W.U32]::SendMessageInt($comboH, 0x015C, 0, 0) | Out-Null
+
+# "Include stopped services" must ADD entries. Adjudicated by count, not pixels.
+$showall = Require (Find-El 'BUTTON' '*stopped services*') "show-all checkbox"
 Click-El $showall; Wait-Idle
 $c1 = Combo-Count $combo
-Write-Host "probe: after show-all, target combo has $c1 entries"
+Write-Host "probe: with stopped services, target combo has $c1 entries"
 if ($c1 -le $c0) { Fail "show-all did not grow the target list ($c0 -> $c1)" }
 Shot '02-monitor-showall'
 
