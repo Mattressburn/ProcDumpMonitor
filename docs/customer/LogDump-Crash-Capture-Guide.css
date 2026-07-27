@@ -1,0 +1,21 @@
+/* Per-document overrides for the LogDump crash-capture guide.
+   Loaded after assets/jci-brand.css by build_pdf.py. */
+
+/* The brand sheet caps screenshots at 120mm, which is right for a small inset
+   but renders a 1168px application window unreadable. These figures ARE the
+   instruction - a customer matches what is on screen against them - so they run
+   the full content width. */
+figure.screenshot img {
+    max-width: 100%;
+}
+
+/* Cropped detail figures (a single row of the window) are wide and short; left
+   at full width they read as banners rather than close-ups. */
+figure.screenshot.detail img {
+    max-width: 145mm;
+}
+
+/* A figure directly under its step heading should not be pushed away from it. */
+h3 + figure.screenshot {
+    margin-top: 8pt;
+}

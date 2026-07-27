@@ -1,0 +1,296 @@
+/* =========================================================================
+   Johnson Controls — branded stylesheet for the Copilot CLI setup guide PDF.
+   Follows JCI Brand Guidelines v1.9.2 (Feb 2026):
+     Primary:   JCI Primary Blue #152ea9 · JCI Cyan #00adff · JCI Green #32c858
+     Gradient:  Dark blue #000070 -> Primary blue -> Cyan -> Green (bottom stripe)
+     CTA:       JCI Orange #f58835 (accents only, never primary)
+     Greys:     Light grey #f2f2f2 · Cool grey #333740
+     Type:      Noto Sans (primary), Arial (fallback)
+   ========================================================================= */
+
+:root {
+    --jci-blue:      #152ea9;
+    --jci-dark-blue: #000070;
+    --jci-cyan:      #00adff;
+    --jci-green:     #32c858;
+    --jci-orange:    #f58835;
+    --jci-light:     #f2f2f2;
+    --jci-cool:      #333740;
+    --jci-muted:     #9aa0a6;
+    --jci-rule:      #e3e6ea;
+}
+
+/* ---- Page geometry, running header / footer ---------------------------- */
+@page {
+    size: Letter;
+    margin: 24mm 18mm 22mm 18mm;
+
+    @top-left {
+        content: "GitHub Copilot CLI  ·  Internal Setup Guide";
+        font-family: "Noto Sans", Arial, sans-serif;
+        font-size: 7.5pt;
+        color: #9aa0a6;
+        vertical-align: bottom;
+        padding-bottom: 7pt;
+    }
+    @top-right {
+        content: "Johnson Controls";
+        font-family: "Noto Sans", Arial, sans-serif;
+        font-weight: 700;
+        font-size: 7.5pt;
+        color: #152ea9;
+        vertical-align: bottom;
+        padding-bottom: 7pt;
+    }
+    @bottom-left {
+        content: "Internal Use Only  ·  © 2026 Johnson Controls";
+        font-family: "Noto Sans", Arial, sans-serif;
+        font-size: 7.5pt;
+        color: #9aa0a6;
+        vertical-align: top;
+        padding-top: 6pt;
+    }
+    @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: "Noto Sans", Arial, sans-serif;
+        font-size: 7.5pt;
+        color: #9aa0a6;
+        vertical-align: top;
+        padding-top: 6pt;
+    }
+}
+
+/* Cover page: no margins, no running header/footer. */
+@page :first {
+    margin: 0;
+    @top-left { content: none; }
+    @top-right { content: none; }
+    @bottom-left { content: none; }
+    @bottom-right { content: none; }
+}
+
+/* Signature brand gradient stripe — full-bleed at the bottom of every page. */
+.page-stripe {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 5pt;
+    background: linear-gradient(90deg,
+        #000070 0%, #152ea9 26%, #00adff 64%, #32c858 100%);
+}
+
+/* ---- Base typography --------------------------------------------------- */
+html {
+    font-family: "Noto Sans", Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #333740;
+}
+body { margin: 0; }
+
+p { margin: 0 0 9pt; }
+strong { font-weight: 700; }
+a { color: #152ea9; text-decoration: none; }
+
+/* ---- Cover page -------------------------------------------------------- */
+.cover {
+    position: relative;
+    height: 279mm;
+    box-sizing: border-box;
+    padding: 18mm;
+    background: #ffffff;
+    break-after: page;
+}
+.cover .logo-img {
+    position: absolute;
+    top: 18mm;
+    right: 18mm;
+    width: 52mm;       /* official full-color logo; aspect ~1.75:1 */
+    height: auto;
+}
+.cover .block {
+    position: absolute;
+    top: 116mm;
+    left: 18mm;
+    right: 18mm;
+}
+.cover .eyebrow {
+    color: #152ea9;
+    font-weight: 700;
+    letter-spacing: 3.5px;
+    font-size: 10pt;
+    text-transform: uppercase;
+    margin-bottom: 12pt;
+}
+.cover h1.title {
+    color: #333740;
+    font-size: 42pt;
+    font-weight: 300;
+    line-height: 1.05;
+    margin: 0;
+}
+.cover .sub {
+    color: #5a6068;
+    font-size: 13pt;
+    line-height: 1.45;
+    margin-top: 12pt;
+    max-width: 150mm;
+}
+.cover .meta {
+    color: #9aa0a6;
+    font-size: 9.5pt;
+    margin-top: 20pt;
+}
+.cover .tagline {
+    position: absolute;
+    bottom: 16mm;
+    right: 18mm;
+    color: #152ea9;
+    font-size: 13pt;
+    font-weight: 400;
+}
+.cover .tagline strong { font-weight: 700; }
+.cover .footerline {
+    position: absolute;
+    bottom: 16mm;
+    left: 18mm;
+    color: #9aa0a6;
+    font-size: 8pt;
+}
+
+/* ---- Content headings -------------------------------------------------- */
+.content { padding-top: 2mm; }
+
+h2 {
+    color: #152ea9;
+    font-size: 17pt;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 22pt 0 10pt;
+    padding-bottom: 5pt;
+    border-bottom: 2px solid #152ea9;
+    break-after: avoid;
+}
+h3 {
+    color: #333740;
+    font-size: 12.5pt;
+    font-weight: 700;
+    margin: 16pt 0 6pt;
+    break-after: avoid;
+}
+h4 {
+    color: #5a6068;
+    font-size: 11pt;
+    font-weight: 700;
+    margin: 12pt 0 4pt;
+    break-after: avoid;
+}
+
+/* ---- Phase header bars (blue gradient) --------------------------------- */
+.phase-header {
+    background: linear-gradient(90deg, #000070 0%, #152ea9 100%);
+    color: #ffffff;
+    font-size: 13pt;
+    font-weight: 700;
+    letter-spacing: 0.3pt;
+    padding: 9pt 14pt;
+    border-radius: 5px;
+    margin: 26pt 0 14pt;
+    break-after: avoid;
+    break-inside: avoid;
+}
+
+/* ---- Callouts ---------------------------------------------------------- */
+.callout, .warning, .success {
+    padding: 10pt 14pt;
+    margin: 12pt 0;
+    border-radius: 4px;
+    break-inside: avoid;
+    font-size: 10pt;
+}
+.callout { background: #eaf6ff; border-left: 4px solid #00adff; }   /* info  — JCI cyan   */
+.warning { background: #fff4ec; border-left: 4px solid #f58835; }   /* warn  — JCI orange */
+.success { background: #eafaf0; border-left: 4px solid #32c858; }   /* done  — JCI green  */
+.callout p:last-child, .warning p:last-child, .success p:last-child { margin-bottom: 0; }
+
+/* ---- Tables ------------------------------------------------------------ */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12pt 0;
+    font-size: 9.5pt;
+    break-inside: avoid;
+}
+th {
+    background: #152ea9;
+    color: #ffffff;
+    text-align: left;
+    font-weight: 700;
+    padding: 7pt 11pt;
+}
+td {
+    padding: 6pt 11pt;
+    border-bottom: 1px solid #e3e6ea;
+    vertical-align: top;
+}
+tr:nth-child(even) td { background: #f2f2f2; }
+
+/* ---- Code -------------------------------------------------------------- */
+code {
+    font-family: "Noto Sans Mono", "DejaVu Sans Mono", monospace;
+    font-size: 8.8pt;
+    background: #f2f2f2;
+    color: #152ea9;
+    padding: 1pt 4pt;
+    border-radius: 3px;
+}
+pre {
+    background: #f2f2f2;
+    border: 1px solid #e3e6ea;
+    border-left: 3px solid #152ea9;
+    border-radius: 5px;
+    padding: 10pt 12pt;
+    margin: 10pt 0;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    break-inside: avoid;
+}
+pre code {
+    background: none;
+    color: #333740;
+    padding: 0;
+    font-size: 8.6pt;
+    line-height: 1.45;
+}
+
+/* ---- Figures / screenshots --------------------------------------------- */
+figure.screenshot {
+    margin: 12pt 0;
+    text-align: center;
+    break-inside: avoid;
+}
+figure.screenshot img {
+    max-width: 120mm;
+    width: 100%;
+    height: auto;
+    border: 1px solid #e3e6ea;
+    border-radius: 5px;
+}
+figure.screenshot figcaption {
+    margin-top: 5pt;
+    font-size: 8.8pt;
+    color: #5a6068;
+    line-height: 1.4;
+}
+
+/* ---- Lists & rules ----------------------------------------------------- */
+ul, ol { margin: 0 0 9pt; padding-left: 18pt; }
+li { margin: 2pt 0; }
+hr {
+    border: none;
+    border-top: 1px solid #e3e6ea;
+    margin: 20pt 0;
+}
+em { font-style: italic; color: #5a6068; }
