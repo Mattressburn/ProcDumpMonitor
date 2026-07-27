@@ -1,4 +1,4 @@
-//! ProcDumpMonitor support bundle — the monitor's own evidence: log files,
+//! LogDump support bundle — the monitor's own evidence: log files,
 //! health.json heartbeat, redacted config, scheduled-task state, dump-folder
 //! listing and the newest dumps (size-capped). Used as a Data Collection
 //! checkbox and as the auto-collect-on-dump mini bundle.
@@ -56,7 +56,7 @@ pub fn pick_dumps_within_cap(sizes: &[u64], cap: u64) -> usize {
 }
 
 pub fn run_into(ctx: &mut RunContext, opts: &Options, dest: &Path) {
-    ctx.log("PDMBundle: collecting ProcDumpMonitor state...");
+    ctx.log("PDMBundle: collecting LogDump state...");
     let _ = std::fs::create_dir_all(dest);
 
     // App logs (procdump.log + rotations).

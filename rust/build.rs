@@ -20,6 +20,11 @@ fn main() {
                 "app.manifest"
             };
             let mut res = winresource::WindowsResource::new();
+            // Without these, winresource derives VERSIONINFO from the crate name
+            // and Task Manager / file Properties show a lowercase "logdump".
+            res.set("ProductName", "LogDump");
+            res.set("FileDescription", "LogDump - process watchdog and log collector");
+            res.set("OriginalFilename", "LogDump.exe");
             res.set_icon("assets/jci_globe.ico");
             res.set_manifest_file(manifest);
             res.compile().expect("resource compile failed");

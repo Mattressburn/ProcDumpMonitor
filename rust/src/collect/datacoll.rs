@@ -16,7 +16,7 @@ pub struct Options {
     pub install_history: bool,
     pub bulk_updates: bool,
     pub swh_settings: bool,
-    /// New: ProcDumpMonitor's own logs/dumps/config/task state.
+    /// New: LogDump's own logs/dumps/config/task state.
     pub pdm_bundle: Option<super::pdm_bundle::Options>,
 }
 
@@ -141,6 +141,8 @@ pub fn run(ctx: &mut RunContext, opts: &Options) {
     }
 
     if let Some(pdm) = &opts.pdm_bundle {
+        // FROZEN across the LogDump rename: this folder name is bundle layout,
+        // which JCI support tooling matches. Same call in cli.rs's "pdm" workflow.
         super::pdm_bundle::run_into(ctx, pdm, &staging.join("ProcDumpMonitor"));
     }
 

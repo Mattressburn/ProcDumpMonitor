@@ -11,7 +11,18 @@ pub fn sanitize_task_name(name: &str) -> String {
 }
 
 pub fn auto_task_name(target: &str) -> String {
-    format!("ProcDump Monitor {target}")
+    format!("LogDump {target}")
+}
+
+/// True when the task-name box still holds a bare product default rather than a
+/// name the user typed, i.e. it is safe to overwrite as the target changes.
+///
+/// "ProcDump Monitor" is the pre-LogDump default and MUST keep matching: a config
+/// saved before the rename would otherwise look user-customized, and the task name
+/// would silently stop following the target. Both callers live in page_monitor.rs
+/// (on_target_picked and write_fields) — keep this the only copy of the rule.
+pub fn is_default_task_name(name: &str) -> bool {
+    name == "LogDump" || name == "ProcDump Monitor"
 }
 
 pub fn xml_escape(s: &str) -> String {
@@ -34,7 +45,7 @@ pub fn task_xml(target_name: &str, exe: &str, config_path: &str, workdir: &str) 
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>ProcDump Monitor - watches for {target} and captures crash dumps.</Description>
+    <Description>LogDump - watches for {target} and captures crash dumps.</Description>
   </RegistrationInfo>
   <Triggers>
     <BootTrigger>
@@ -212,12 +223,28 @@ mod tests {
     #[test]
     fn sanitize_strips_reserved_chars() {
         assert_eq!(sanitize_task_name(r#"a\b/c:d*e?f"g<h>i|j"#), "abcdefghij");
-        assert_eq!(auto_task_name("MyApp"), "ProcDump Monitor MyApp");
+        assert_eq!(auto_task_name("MyApp"), "LogDump MyApp");
+    }
+
+    #[test]
+    fn default_task_name_still_recognises_the_pre_rename_default() {
+        // The load-bearing case: a config written before the LogDump rename holds
+        // "ProcDump Monitor". If this stops matching, that config looks
+        // user-customized and its task name silently stops following the target.
+        assert!(is_default_task_name("ProcDump Monitor"));
+        assert!(is_default_task_name("LogDump"));
+        // Anything the user actually typed must NOT be treated as a default.
+        assert!(!is_default_task_name("LogDump MyApp"));
+        assert!(!is_default_task_name("My Watcher"));
+        // NOT a statement that empty means "user-typed": both call sites treat an
+        // empty box as a default via their own `|| typed_task.is_empty()` clause.
+        // This only pins the helper itself to a pure two-literal match.
+        assert!(!is_default_task_name(""));
     }
 
     #[test]
     fn xml_matches_proven_spike_structure() {
-        let xml = task_xml("MyApp", r"C:\Tools\ProcDumpMonitor.exe",
+        let xml = task_xml("MyApp", r"C:\Tools\LogDump.exe",
                            r"C:\Tools\config.json", r"C:\Tools");
         // Landmines proven on the VM 2026-07-21:
         assert!(!xml.contains("<LogonType>"), "LogonType must be omitted for SYSTEM");
@@ -229,7 +256,7 @@ mod tests {
         assert!(xml.contains("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>"));
         assert!(xml.contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"));
         assert!(xml.contains("<StartWhenAvailable>true</StartWhenAvailable>"));
-        assert!(xml.contains(r"<Command>C:\Tools\ProcDumpMonitor.exe</Command>"));
+        assert!(xml.contains(r"<Command>C:\Tools\LogDump.exe</Command>"));
         assert!(xml.contains(r#"<Arguments>--monitor --config &quot;C:\Tools\config.json&quot;</Arguments>"#));
         assert!(xml.contains(r"<WorkingDirectory>C:\Tools</WorkingDirectory>"));
         assert!(xml.contains("watches for MyApp"));

@@ -20,8 +20,8 @@ pub enum Verb {
 }
 
 pub const USAGE: &str = "\
-ProcDumpMonitor.exe                     launch the GUI
-ProcDumpMonitor.exe <verb> [--config <path>]
+LogDump.exe                             launch the GUI
+LogDump.exe <verb> [--config <path>]
   verbs: monitor | install | uninstall | start | stop | status | collect | version | help
   collect options: [--out <dir>] [--workflows data,install,health,pdm]
                    (default: all workflows, output on the Desktop)
@@ -193,6 +193,9 @@ pub fn run_collect(
             "install" => installlogs::run(&mut ctx, &installlogs::Options::default()),
             "health" => syshealth::run(&mut ctx, &syshealth::Options::default()),
             "pdm" => {
+                // FROZEN across the LogDump rename: these two names are the
+                // bundle's on-disk layout, which JCI support tooling matches.
+                // Prose in the bundle renamed; paths did not. See collect/datacoll.rs.
                 let staging = ctx.run_dir.join("ProcDumpMonitor");
                 pdm_bundle::run_into(&mut ctx, &pdm_opts, &staging);
                 let zip = ctx.run_dir.join("ProcDumpMonitor.zip");

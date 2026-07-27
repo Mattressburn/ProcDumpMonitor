@@ -31,7 +31,7 @@ pub fn run(mut cfg: Config) {
     h.monitor_pid = std::process::id();
     h.version = env!("CARGO_PKG_VERSION").into();
 
-    logger::log("Monitor", "ProcDump Monitor started.");
+    logger::log("Monitor", "LogDump started.");
     logger::log("Monitor", &format!("Target: {} ({:?})", cfg.target_name, cfg.target_type));
 
     // Config::load falls back to Config::default() on a missing or unparseable
@@ -101,7 +101,7 @@ pub fn run(mut cfg: Config) {
                 if last_low_disk_notify.map_or(true, |t| t.elapsed() >= Duration::from_secs(3600)) {
                     last_low_disk_notify = Some(Instant::now());
                     queue.enqueue_warning(cfg.clone(),
-                        format!("[ProcDump] Low disk warning on {}", crate::notify::machine_name()),
+                        format!("[LogDump] Low disk warning on {}", crate::notify::machine_name()),
                         warn);
                 }
                 skip_cycle = true;
@@ -126,7 +126,7 @@ pub fn run(mut cfg: Config) {
             std::thread::sleep(Duration::from_millis(100));
         }
     }
-    logger::log("Monitor", "ProcDump Monitor stopped.");
+    logger::log("Monitor", "LogDump stopped.");
 }
 
 /// One cycle's bitness bookkeeping: re-resolve while the answer is still

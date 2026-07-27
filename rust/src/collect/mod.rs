@@ -1,7 +1,7 @@
 //! Native log-collection engine (spec: docs/superpowers/specs/
 //! 2026-07-25-log-collector-design.md). Ports the three real workflows of
 //! CCURE_LogCollector_GUI_v2.0.ps1 (Data Collection, Install Logs, System
-//! Health) plus a ProcDumpMonitor support bundle. Collection shells only to
+//! Health) plus a LogDump support bundle. Collection shells only to
 //! built-in Windows tools (robocopy, wevtutil, reg.exe, systeminfo,
 //! powershell -Command, tar.exe) — no new crates, no shipped scripts.
 //!
@@ -67,7 +67,7 @@ impl<'a> RunContext<'a> {
     /// Writes Collection_Summary.txt and returns the run folder.
     pub fn finish(mut self) -> PathBuf {
         self.log("Run finished.");
-        let mut text = String::from("ProcDumpMonitor Collection Summary\r\n");
+        let mut text = String::from("LogDump Collection Summary\r\n");
         text.push_str(&format!("Version: {}\r\n", env!("CARGO_PKG_VERSION")));
         text.push_str(&format!("Machine: {}\r\n", std::env::var("COMPUTERNAME").unwrap_or_default()));
         text.push_str(&format!("Time: {}\r\n\r\n", chrono::Local::now().format("%Y-%m-%d %H:%M:%S")));

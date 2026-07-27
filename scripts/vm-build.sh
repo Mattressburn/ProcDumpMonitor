@@ -19,6 +19,6 @@ cargo $CARGO_ARGS 2>&1
 \"CARGO_EXIT=\$LASTEXITCODE\""
 if [ "$CMD" = "build" ]; then
   mkdir -p dist
-  scp -q -o BatchMode=yes "$VM:C:/pdm/target/release/ProcDumpMonitor.exe" dist/ && \
-    ls -la dist/ProcDumpMonitor.exe
+  scp -q -o BatchMode=yes "$VM:C:/pdm/target/release/LogDump.exe" dist/ && \
+    ls -la dist/LogDump.exe
 fi

@@ -1,5 +1,5 @@
 //! Data Collection page — the PS1's main tab restyled into the sidebar
-//! shell, plus the new "ProcDumpMonitor logs, dumps & task state" bundle
+//! shell, plus the new "LogDump logs, dumps & task state" bundle
 //! checkbox and the 7-day event-log default.
 
 use crate::collect::{self, datacoll, discover, pdm_bundle};
@@ -114,7 +114,7 @@ pub fn build(parent: &nwg::Frame, _state: Rc<super::WizardState>) -> DataCollPag
     let chk_swh = mk_check(parent, "SWHSystem settings", (COL2, 154), (280, 22), true);
     let chk_pdm = mk_check(
         parent,
-        "ProcDumpMonitor logs, dumps && task state",
+        "LogDump logs, dumps && task state",
         (PAD, 180),
         (400, 22),
         true,

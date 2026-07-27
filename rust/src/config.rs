@@ -160,7 +160,7 @@ impl Default for Config {
             max_log_files: 5,
             dump_retention_days: 0,
             dump_retention_max_gb: 0.0,
-            task_name: "ProcDump Monitor".into(),
+            task_name: "LogDump".into(),
             email_enabled: false,
             smtp_server: String::new(),
             smtp_port: 25,
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(c.max_log_size_mb, 10);
         assert_eq!(c.max_log_files, 5);
         assert_eq!(c.smtp_port, 25);
-        assert_eq!(c.task_name, "ProcDump Monitor");
+        assert_eq!(c.task_name, "LogDump");
     }
 
     #[test]

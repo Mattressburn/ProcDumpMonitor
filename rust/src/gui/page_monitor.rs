@@ -532,7 +532,7 @@ impl MonitorPage {
         let prev_target = state.cfg.borrow().target_name.clone();
         let typed_task = task::sanitize_task_name(&self.txt_task_name.text());
         if typed_task == task::auto_task_name(&prev_target)
-            || typed_task == "ProcDump Monitor"
+            || task::is_default_task_name(&typed_task)
             || typed_task.is_empty()
         {
             self.txt_task_name.set_text(&task::auto_task_name(&name));
@@ -782,7 +782,7 @@ impl MonitorPage {
         // the PREVIOUS target_name still in cfg.
         let typed_task = task::sanitize_task_name(&self.txt_task_name.text());
         if typed_task == task::auto_task_name(&cfg.target_name)
-            || typed_task == "ProcDump Monitor"
+            || task::is_default_task_name(&typed_task)
             || typed_task.is_empty()
         {
             cfg.task_name = task::auto_task_name(&name);
