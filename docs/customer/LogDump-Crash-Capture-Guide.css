@@ -19,3 +19,13 @@ figure.screenshot.detail img {
 h3 + figure.screenshot {
     margin-top: 8pt;
 }
+
+/* The brand sheet sets break-inside:avoid on tables. That is right for a
+   four-row table and wrong for a ten-row one: an unbreakable block taller than
+   the space left gets pushed whole to the next page and strands half a page of
+   white. Let tables flow instead, keep individual ROWS intact so no row is cut
+   in half, and repeat the header on each continuation page so a reader who
+   turns over still knows what the columns mean. */
+table { break-inside: auto; }
+thead { display: table-header-group; }
+tr    { break-inside: avoid; }

@@ -40,7 +40,7 @@ need <strong>Part 2</strong> &mdash; skip ahead, it takes about a minute.</p>
 | You need | Detail |
 | --- | --- |
 | **LogDump.exe** | Supplied by your Johnson Controls engineer. A single file. |
-| **procdump64.exe** | Microsoft Sysinternals ProcDump, from `learn.microsoft.com/sysinternals/downloads/procdump`. **Not included** &mdash; dump capture cannot work without it. Not needed for log collection. |
+| **ProcDump** | Microsoft Sysinternals, from `learn.microsoft.com/sysinternals/downloads/procdump`. **Not included.** Copy in **both** `procdump64.exe` and `procdump.exe` &mdash; which one is correct depends on the target, and bringing both means you never have to care. Not needed for log collection. |
 | **Administrator** | On the server itself. LogDump requests elevation automatically. |
 | **Disk space** | A full dump is roughly the size of the target's memory use &mdash; commonly **400&nbsp;MB to 1&nbsp;GB** for a C&bull;CURE service. Allow several GB. |
 
@@ -50,9 +50,11 @@ need <strong>Part 2</strong> &mdash; skip ahead, it takes about a minute.</p>
 (64-bit), and the two are not interchangeable. A 32-bit ProcDump <strong>cannot
 capture a 64-bit process at all</strong> &mdash; it produces no dump and no obvious
 error, and you discover this only after the crash you were waiting for.</p>
-<p>LogDump works out which one is correct and tells you. Step&nbsp;3 is where you
-confirm it. Copy in <strong>both</strong> ProcDump binaries if you have them; copy
-<code>procdump64.exe</code> at minimum.</p>
+<p>Which one you need depends on the target, not on the server. The C&bull;CURE
+services are 64-bit; the <strong>Admin Workstation</strong> and
+<strong>Monitoring Station</strong> clients are 32-bit. Copy in
+<strong>both</strong> binaries and LogDump picks the right one &mdash; see
+<em>Which ProcDump does your target need?</em> after Step&nbsp;3.</p>
 </div>
 
 <div class="phase-header">Part 1 &mdash; Capture a crash dump</div>
@@ -130,6 +132,46 @@ of ten Software House processes share an identical 32-bit file header and split
 evenly between 32- and 64-bit at runtime &mdash; which is exactly why this is worth
 ten seconds of your attention.</p>
 </div>
+
+### Which ProcDump does your target need?
+
+LogDump resolves this itself &mdash; the table is here so you know what to copy onto
+the server, and so you can sanity-check the answer it gives you.
+
+Measured on a live C&bull;CURE 9000 server and confirmed against Task Manager:
+
+| Target | Runs as | Needs |
+| --- | --- | --- |
+| `SoftwareHouse.CrossFire.Server.exe` | 64-bit | `procdump64.exe` |
+| `SoftwareHouse.CrossFire.ImportWatcherService.exe` | 64-bit | `procdump64.exe` |
+| `SoftwareHouse.CrossFire.ReportServerService.exe` | 64-bit | `procdump64.exe` |
+| `SoftwareHouse.NextGen.iSTAR_DriverService.exe` | 64-bit | `procdump64.exe` |
+| `…Nantucket.SessionKeyManager.exe` | 64-bit | `procdump64.exe` |
+| `…Nantucket.SQLiteManager.exe` | 64-bit | `procdump64.exe` |
+| **`SoftwareHouse.NextGen.Client.AdminWorkstation.exe`** | **32-bit** | **`procdump.exe`** |
+| **`SoftwareHouse.NextGen.Client.MonitoringStation.exe`** | **32-bit** | **`procdump.exe`** |
+| `SoftwareHouse.CrossFire.ServerComponentFramework.exe` | 32-bit | `procdump.exe` |
+| `…Nantucket.GlobalAntipassbackManager.exe` | 32-bit | `procdump.exe` |
+
+**In practice:** everything on the server side is 64-bit. The two you will
+actually be asked to capture as 32-bit are the **Admin Workstation** and the
+**Monitoring Station** &mdash; the client applications an operator is sitting in
+front of when it fails. If you are capturing a client rather than a service,
+`procdump.exe` is the one that matters.
+
+<div class="warning">
+<p><strong>You cannot tell by looking at the file</strong></p>
+<p>Eight of the ten binaries above report an <em>identical</em> 32-bit file
+header, and they split evenly between 32- and 64-bit at runtime. The name, the
+folder and the file properties all fail to distinguish them. This is why the line
+under the target in Step&nbsp;3 is the thing to trust &mdash; not this table, and
+not intuition.</p>
+</div>
+
+Capturing a client application has one extra wrinkle: it runs as the logged-in
+operator, while the scheduled task runs as SYSTEM. That works, but the operator
+must be logged in for the target to exist at all &mdash; so leave the session
+signed in while you wait for the fault.
 
 ### 4. Choose what counts as a failure
 
