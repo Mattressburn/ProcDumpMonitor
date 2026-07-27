@@ -108,7 +108,7 @@ impl Preset {
 }
 
 #[allow(dead_code)]
-static PRESETS: [Preset; 5] = [
+static PRESETS: [Preset; 6] = [
     Preset {
         name: "Crash capture",
         description: "Captures a full dump when the process throws an unhandled exception or terminates unexpectedly. Uses safe defaults appropriate for production systems. Ideal for post-mortem crash investigation.",
@@ -120,6 +120,12 @@ static PRESETS: [Preset; 5] = [
         description: "Captures a full dump when the process window stops responding (hung). Useful for diagnosing UI freezes and deadlocks.",
         effective_flags: "-ma -h",
         apply_fn: |c| { c.hang_window_seconds = 1; },
+    },
+    Preset {
+        name: "Crash + hang capture",
+        description: "Captures a full dump when the process throws an unhandled exception, terminates unexpectedly, OR stops responding. The usual choice for a service that might die or might just wedge, since you rarely know in advance which one you are chasing.",
+        effective_flags: "-ma -e -t -h",
+        apply_fn: |c| { c.dump_on_exception = true; c.dump_on_terminate = true; c.hang_window_seconds = 1; },
     },
     Preset {
         name: "High CPU spike capture",
@@ -212,8 +218,28 @@ mod tests {
         // reset preserves paths + wait_for_process
         assert_eq!(c.dump_directory, r"C:\Dumps\MyApp");
         assert!(c.wait_for_process);
-        assert_eq!(Preset::all().len(), 5);
+        assert_eq!(Preset::all().len(), 6);
         assert_eq!(Preset::all()[0].name, "Crash capture");
         assert_eq!(Preset::find("Low impact full dump").unwrap().effective_flags, "-a -r -ma");
+    }
+
+    #[test]
+    fn crash_plus_hang_preset_really_arms_all_three_triggers() {
+        // The point of this preset is that one pick sets -e, -t AND -h. Asserting
+        // the fields would pass even if apply_fn set a field build_args ignores,
+        // so go through build_args and look at the command the monitor will run.
+        let mut c = base();
+        Preset::find("Crash + hang capture").unwrap().apply(&mut c);
+        let args = build_args(&c);
+        for flag in [" -e ", " -t ", " -h "] {
+            assert!(args.contains(flag), "expected {flag:?} in {args}");
+        }
+        // and it must not have dragged in the resource triggers
+        assert!(!args.contains("-c "), "no CPU trigger expected: {args}");
+        assert!(!args.contains("-m "), "no memory trigger expected: {args}");
+        assert_eq!(
+            Preset::find("Crash + hang capture").unwrap().effective_flags,
+            "-ma -e -t -h"
+        );
     }
 }

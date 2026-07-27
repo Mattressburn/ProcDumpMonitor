@@ -91,22 +91,23 @@ Choose the process that ProcDump will monitor.
 
 ### ProcDump options
 
-Configure *how* ProcDump captures dumps. For most use cases, pick a **Scenario** and leave everything else alone.
+Configure *how* ProcDump captures dumps. For most use cases, pick a **Preset** and leave everything else alone.
 
-#### Scenario dropdown
+#### Preset dropdown
 
-Presets that configure all the options below in one click. The default is **Crash capture**.
+One-click shortcuts. Picking one **resets every trigger** and applies that combination; the default is **Crash capture**.
 
-| Scenario | ProcDump flags | When to use |
-|----------|---------------|-------------|
+| Preset | ProcDump flags | When to use |
+|--------|---------------|-------------|
 | **Crash capture** *(default)* | `-ma -e -t` | Process crashes with an unhandled exception or terminates unexpectedly. Standard post-mortem investigation. |
 | **Hang capture** | `-ma -h` | Process window stops responding (hung). Diagnose UI freezes and deadlocks. |
+| **Crash + hang capture** | `-ma -e -t -h` | Either failure mode. The usual choice for a service that might die or might just wedge, when you don't know in advance which you're chasing. |
 | **High CPU spike capture** | `-ma -c 90 -s 10 -n 3` | CPU exceeds 90 % for 10+ seconds. Captures up to 3 dumps. Identify runaway threads. |
 | **Memory threshold capture** | `-ma -m 2048 -n 3` | Memory commit exceeds 2048 MB. Captures up to 3 dumps. Investigate memory leaks. |
 | **Low impact full dump** | `-a -r -ma` | One-time full dump using process cloning (`-r`). Process suspended for milliseconds, not the full write duration. |
-| **Custom** | *(manual)* | You configure every option yourself. The dropdown switches to this automatically if you change any individual option. |
+| **Custom** | *(manual)* | Whatever combination you built by hand. The dropdown switches here automatically the moment you change any individual option. |
 
-> **Note:** If you manually change any option, the dropdown automatically switches to "Custom". Use the dropdown to return to a preset.
+> **The preset list is not the limit.** A preset picks *one* combination, but the triggers themselves combine freely — tick any mix of **-e**, **-h**, **-t**, the CPU fields, and **MB (-m)** and the dropdown moves to **Custom** while keeping everything you ticked. Use the dropdown to snap back to a preset.
 
 #### Effective command
 

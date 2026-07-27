@@ -276,7 +276,11 @@ pub fn build(parent: &nwg::Frame, state: Rc<super::WizardState>) -> MonitorPage 
     // ---- Dump triggers & output -----------------------------------------
     captions.push(mk_header(parent, "Dump triggers & output", 104, &header_font));
 
-    captions.push(mk_label(parent, "Scenario:", (PAD, 130), (190, 20)));
+    // "Preset", not "Scenario": these are one-click shortcuts that RESET every
+    // trigger and apply one combination. Combining triggers is done with the
+    // checkboxes below, which flip this box to Custom. Labelling it "Scenario"
+    // made it read as the trigger picker, so a combination looked impossible.
+    captions.push(mk_label(parent, "Preset:", (PAD, 130), (190, 20)));
     let cmb_scenario = mk_combo(parent, (FIELD_X, 132), (300, FIELD_H));
     {
         let mut names: Vec<String> = Preset::all().iter().map(|p| p.name.to_string()).collect();
