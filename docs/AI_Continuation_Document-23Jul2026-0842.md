@@ -54,7 +54,7 @@
 - **What changed in the system:** New `rust/` crate + `scripts/vm.sh`/`vm-build.sh` + `docs/superpowers/` spec & plan, all merged to `main`. C# sources untouched.
 - **Discussed but NOT implemented:** Deleting C# sources; the two optional tidies; pushing to origin; the all-in-one "diagnostics hub" expansion (still hypothetical, only in README prose).
 - **Open threads:**
-  1. **RDP GUI acceptance walkthrough** — RDP `192.168.69.110` (pw `MrDockDev26`). Confirm: 6-page nav; scenario presets apply + live effective-command matches; editing an option flips scenario to "Custom"; **Browse click updates preview AND flips to Custom**; bitness label; Task page exists/new branch; Notify bad-email modal blocks Create Task; Review actions (Create/Run/Stop/Remove/Open Dumps/View Logs/Copy/Task Scheduler); About logo + build date render.
+  1. **RDP GUI acceptance walkthrough** — RDP `192.168.69.110` (pw `<redacted-rotate-me>`). Confirm: 6-page nav; scenario presets apply + live effective-command matches; editing an option flips scenario to "Custom"; **Browse click updates preview AND flips to Custom**; bitness label; Task page exists/new branch; Notify bad-email modal blocks Create Task; Review actions (Create/Run/Stop/Remove/Open Dumps/View Logs/Copy/Task Scheduler); About logo + build date render.
   2. C# source deletion decision.
   3. Push to origin?
 

@@ -3056,7 +3056,7 @@ Wire the three events listed in the doc comment into the shell's `full_bind_even
 - [ ] **Step 3: Build on VM and manually verify**
 
 Run: `scripts/vm-build.sh build`, then launch on the VM (`scripts/vm.sh 'Start-Process C:\pdm\target\release\ProcDumpMonitor.exe'`).
-**Checkpoint for the user (RDP to 192.168.69.110, pw MrDockDev26):** window opens, service dropdown lists running services, picking one fills the textbox, Back/Next enable/disable correctly. Report before continuing.
+**Checkpoint for the user (RDP to 192.168.69.110, pw <redacted-rotate-me>):** window opens, service dropdown lists running services, picking one fills the textbox, Back/Next enable/disable correctly. Report before continuing.
 
 - [ ] **Step 4: Commit**
 
