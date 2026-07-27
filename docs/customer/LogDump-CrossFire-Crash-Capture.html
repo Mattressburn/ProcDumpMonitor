@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<!--
+  Customer-facing crash-capture guide. Source of the PDF beside this file.
+
+  {{LOGO}} is a placeholder, NOT a bug: the base64 of rust/assets/jci_globe_256.png
+  is ~31KB and does not belong in git. Substitute it at build time.
+
+  Regenerate (PowerShell, from the repo root):
+
+    $logo = [Convert]::ToBase64String([IO.File]::ReadAllBytes("rust\assets\jci_globe_256.png"))
+    $out  = "$env:TEMP\guide.html"
+    [IO.File]::WriteAllText($out,
+      [IO.File]::ReadAllText("docs\customer\LogDump-CrossFire-Crash-Capture.html").
+        Replace('{{LOGO}}', "data:image/png;base64,$logo"))
+    $edge = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    Start-Process $edge -Wait -NoNewWindow -ArgumentList @(
+      "--headless","--disable-gpu","--no-pdf-header-footer",
+      "--print-to-pdf=docs\customer\LogDump-CrossFire-Crash-Capture.pdf",
+      "file:///$($out -replace '\\','/')")
+
+  Style follows the JCI quick-guide format used by Copilot-Install-Guide.pdf.
+  Screen labels quoted here are verbatim from the GUI - if you rename a button
+  or a page, this guide is telling a customer to click something that no longer
+  exists. Check it against gui/mod.rs and gui/page_monitor.rs.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LogDump - Capture a CrossFire Server Crash</title>
+<style>
+  @page { size: Letter; margin: 16mm 15mm 18mm 15mm; }
+
+  :root{
+    --navy:#0d2340;
+    --blue:#0072ce;
+    --sky:#00a3e0;
+    --ink:#1b1f24;
+    --mute:#5b6673;
+    --rule:#d9e0e8;
+    --wash:#f2f6fa;
+    --warn:#b3401a;
+    --warnwash:#fdf3ee;
+    --okwash:#eef7f0;
+    --ok:#1e7a3c;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;
+    color:var(--ink);
+    font-size:10.4pt;
+    line-height:1.5;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
+  /* running footer on every page, same as the JCI quick guides */
+  .runfoot{
+    position:fixed; bottom:-11mm; left:0; right:0;
+    font-size:7.6pt; letter-spacing:.03em; color:var(--mute);
+    border-top:.6pt solid var(--rule); padding-top:2.5mm;
+    display:flex; justify-content:space-between;
+  }
+
+  /* ---------- cover ---------- */
+  .cover{ height:247mm; display:flex; flex-direction:column; page-break-after:always; }
+  .cover-top{ display:flex; align-items:center; gap:9px; }
+  .cover-top img{ width:26px; height:26px; }
+  .cover-top span{ font-size:9pt; font-weight:600; color:var(--navy); letter-spacing:.02em; }
+  .cover-mid{ margin-top:52mm; }
+  .eyebrow{
+    font-size:8.6pt; font-weight:700; color:var(--blue);
+    letter-spacing:.42em; margin-bottom:7mm;
+  }
+  h1.cover-title{
+    font-size:41pt; line-height:1.02; font-weight:700;
+    color:var(--navy); margin:0 0 6mm 0; letter-spacing:-.015em;
+  }
+  .cover-rule{ width:34mm; height:3.5pt; background:var(--sky); margin-bottom:7mm; }
+  .cover-sub{ font-size:12.4pt; line-height:1.45; color:var(--mute); max-width:132mm; margin:0; }
+  .cover-meta{
+    margin-top:auto; border-top:.8pt solid var(--rule); padding-top:5mm;
+    font-size:8.8pt; color:var(--mute);
+  }
+  .cover-meta b{ color:var(--navy); font-weight:600; }
+  .cover-meta .sep{ color:var(--rule); padding:0 3.5mm; }
+  .tagline{ margin-top:4mm; font-size:8.6pt; font-style:italic; color:var(--blue); }
+
+  /* ---------- content ---------- */
+  h2.sec{
+    font-size:13.2pt; color:var(--navy); font-weight:700;
+    margin:0 0 4mm 0; padding-bottom:2mm; border-bottom:1.6pt solid var(--sky);
+  }
+  .lede{ color:var(--mute); margin:0 0 6mm 0; font-size:10pt; }
+
+  .step{ page-break-inside:avoid; margin-bottom:6.5mm; }
+  .step-head{ display:flex; align-items:baseline; gap:3.5mm; margin-bottom:1.8mm; }
+  .num{
+    background:var(--blue); color:#fff; font-weight:700; font-size:9pt;
+    min-width:6.4mm; height:6.4mm; border-radius:50%;
+    display:inline-flex; align-items:center; justify-content:center;
+    flex:0 0 auto; transform:translateY(.6mm);
+  }
+  .step-head h3{ font-size:11.4pt; color:var(--navy); margin:0; font-weight:650; }
+  .step-body{ padding-left:9.9mm; }
+  .step-body p{ margin:0 0 2.4mm 0; }
+  .step-body ul{ margin:0 0 2.4mm 0; padding-left:5mm; }
+  .step-body li{ margin-bottom:1.4mm; }
+
+  code{
+    font-family:"Cascadia Mono",Consolas,"Courier New",monospace;
+    font-size:9.1pt; background:var(--wash); border:.5pt solid var(--rule);
+    border-radius:2.5pt; padding:.4mm 1.4mm; color:var(--navy);
+  }
+  .screen{
+    font-family:"Cascadia Mono",Consolas,"Courier New",monospace;
+    font-size:9pt; background:var(--navy); color:#e8f1fa;
+    border-radius:3pt; padding:3mm 4mm; margin:2.5mm 0; white-space:pre-wrap;
+  }
+  .screen b{ color:#7fd4ff; font-weight:600; }
+
+  .note, .warn, .ok{
+    border-left:2.6pt solid var(--blue); background:var(--wash);
+    padding:2.8mm 4mm; margin:3mm 0; font-size:9.5pt; page-break-inside:avoid;
+  }
+  .warn{ border-left-color:var(--warn); background:var(--warnwash); }
+  .ok{ border-left-color:var(--ok); background:var(--okwash); }
+  /* only the LEADING b is the callout title; inline <b> mid-sentence must stay inline */
+  .note > b:first-child, .warn > b:first-child, .ok > b:first-child{
+    display:block; margin-bottom:.8mm; color:var(--navy);
+  }
+  .warn > b:first-child{ color:var(--warn); }
+  .ok > b:first-child{ color:var(--ok); }
+
+  table{ width:100%; border-collapse:collapse; margin:3mm 0 5mm 0; font-size:9.4pt; }
+  th{
+    text-align:left; background:var(--navy); color:#fff; font-weight:600;
+    padding:2.2mm 3mm; font-size:8.8pt; letter-spacing:.03em;
+  }
+  td{ padding:2.2mm 3mm; border-bottom:.5pt solid var(--rule); vertical-align:top; }
+  tr:nth-child(even) td{ background:#fafcfe; }
+  td.k{ white-space:nowrap; font-weight:600; color:var(--navy); }
+
+  .pagebreak{ page-break-before:always; }
+  .lastline{ margin-top:7mm; padding-top:3mm; border-top:.8pt solid var(--rule);
+             font-size:8.6pt; color:var(--mute); }
+</style>
+</head>
+<body>
+
+<div class="runfoot">
+  <span>For customer use under an open Johnson Controls support case</span>
+  <span>&copy; 2026 Johnson Controls</span>
+</div>
+
+<!-- ======================= COVER ======================= -->
+<section class="cover">
+  <div class="cover-top">
+    <img src="{{LOGO}}" alt="">
+    <span>Johnson Controls&nbsp;&nbsp;|&nbsp;&nbsp;Software House C&bull;CURE 9000</span>
+  </div>
+
+  <div class="cover-mid">
+    <div class="eyebrow">CRASH CAPTURE GUIDE</div>
+    <h1 class="cover-title">LogDump</h1>
+    <div class="cover-rule"></div>
+    <p class="cover-sub">
+      Capture a crash dump of <b>SoftwareHouse.CrossFire.Server.exe</b> so support can
+      find out why it is stopping. One file, no installer &mdash; arm it once and it
+      waits for the next crash on its own.
+    </p>
+  </div>
+
+  <div class="cover-meta">
+    <b>Audience:</b> Site administrator <span class="sep">|</span>
+    <b>Runs on:</b> The C&bull;CURE 9000 server <span class="sep">|</span>
+    <b>Requires:</b> Administrator
+    <div class="tagline">The power behind your mission</div>
+  </div>
+</section>
+
+<!-- ======================= BEFORE ======================= -->
+<h2 class="sec">Before you start</h2>
+<p class="lede">Five minutes of setup, then it runs unattended until CrossFire crashes.</p>
+
+<table>
+  <tr><th style="width:38mm">You need</th><th>Detail</th></tr>
+  <tr>
+    <td class="k">LogDump.exe</td>
+    <td>Supplied by your Johnson Controls engineer, on the USB drive with this guide.</td>
+  </tr>
+  <tr>
+    <td class="k">procdump64.exe</td>
+    <td>Microsoft Sysinternals ProcDump &mdash; free download from
+        <code>learn.microsoft.com/sysinternals/downloads/procdump</code>.
+        <b>Not included</b>, and nothing can be captured without it.</td>
+  </tr>
+  <tr>
+    <td class="k">Administrator</td>
+    <td>On the server itself. LogDump asks for elevation automatically.</td>
+  </tr>
+  <tr>
+    <td class="k">Free disk space</td>
+    <td>A full dump of CrossFire Server is roughly the size of its memory use &mdash;
+        commonly <b>400&nbsp;MB to 1&nbsp;GB</b>. Allow several GB.</td>
+  </tr>
+</table>
+
+<div class="warn">
+  <b>Use the 64-bit ProcDump</b>
+  CrossFire Server runs as a 64-bit process, so it needs <code>procdump64.exe</code> and
+  <b>not</b> the 32-bit <code>procdump.exe</code>. The 32-bit one cannot capture a 64-bit
+  process at all &mdash; you get no dump and no obvious error, and you only find out
+  after the crash you were waiting for. LogDump checks this for you in Step&nbsp;3.
+</div>
+
+<!-- ======================= STEPS ======================= -->
+<h2 class="sec">Set it up</h2>
+
+<div class="step">
+  <div class="step-head"><span class="num">1</span><h3>Put both files in one folder</h3></div>
+  <div class="step-body">
+    <p>On the server, create a folder such as <code>C:\LogDump</code> and copy in:</p>
+    <div class="screen">C:\LogDump\
+   <b>LogDump.exe</b>
+   <b>procdump64.exe</b></div>
+    <div class="note">
+      <b>Give it its own folder</b>
+      LogDump saves its settings, its log, and its status file next to itself. Do not
+      run it from a shared folder, from the USB drive, or from inside
+      <code>C:\Program Files</code>.
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-head"><span class="num">2</span><h3>Run it as Administrator</h3></div>
+  <div class="step-body">
+    <p>Double-click <code>LogDump.exe</code>. Windows will show a User Account Control
+       prompt &mdash; that is expected, choose <b>Yes</b>. The window opens on the
+       <b>ProcDump</b> page.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-head"><span class="num">3</span><h3>Check the target &mdash; the important step</h3></div>
+  <div class="step-body">
+    <p>The <b>Process or service</b> box at the top should already read:</p>
+    <div class="screen">Proc: <b>SoftwareHouse.CrossFire.Server.exe</b></div>
+    <p>If it says <code>- Select a process or service -</code> instead, open the list and
+       pick that entry yourself.</p>
+    <p>Now read the small line directly underneath it. It must mention
+       <b>procdump64.exe</b>:</p>
+    <div class="screen">64-bit process -&gt; <b>procdump64.exe</b></div>
+    <div class="warn">
+      <b>Stop if that line says anything else</b>
+      If it reads <code>32-bit process</code>, <code>could not determine target
+      bitness</code>, or <code>No ProcDump binary found</code>, do not continue &mdash;
+      send your engineer a photo of the window. Carrying on would produce an empty or
+      unusable dump, and you would only find that out after the next crash.
+    </div>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-head"><span class="num">4</span><h3>Choose what to capture</h3></div>
+  <div class="step-body">
+    <p>Leave <b>Preset</b> on <b>Crash capture</b>. If CrossFire also freezes or stops
+       responding rather than closing outright, choose <b>Crash + hang capture</b>
+       instead &mdash; it covers both.</p>
+    <p>Leave <b>Dump type</b> on <b>Full</b>. Anything smaller usually cannot be
+       analysed.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-head"><span class="num">5</span><h3>Say where dumps go</h3></div>
+  <div class="step-body">
+    <p>Set <b>Dump directory</b> to a folder on a drive with room, for example
+       <code>D:\CCURE-Dumps</code>.</p>
+    <p>Avoid <code>C:\Windows</code>, the desktop, and anything inside a user profile.
+       Filling the system drive on a C&bull;CURE server causes its own outage.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-head"><span class="num">6</span><h3>Arm it</h3></div>
+  <div class="step-body">
+    <p>At the bottom of the window click <b>Create Task</b>, then <b>Run Now</b>.</p>
+    <p>The status panel above the buttons should show the scheduled task as present and
+       the monitor as running. That panel refreshes by itself every few seconds &mdash;
+       it reflects the real state of the machine, so trust it over anything this guide says.</p>
+    <div class="ok">
+      <b>That's it &mdash; you can close the window</b>
+      The capture keeps running without it, and starts again by itself if the server
+      reboots. Leave CrossFire alone and carry on as normal until it crashes.
+    </div>
+  </div>
+</div>
+
+<!-- ======================= AFTER ======================= -->
+<div class="pagebreak"></div>
+<h2 class="sec">After CrossFire crashes</h2>
+<p class="lede">Send two things: the dump, and a log bundle taken from the same server.</p>
+
+<div class="step">
+  <div class="step-head"><span class="num">7</span><h3>Get the dump</h3></div>
+  <div class="step-body">
+    <p>Open LogDump again and click <b>Open Dumps</b> at the bottom &mdash; it opens the
+       folder from Step&nbsp;5. You are looking for a <code>.dmp</code> file stamped
+       around the time of the crash.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-head"><span class="num">8</span><h3>Collect the log bundle</h3></div>
+  <div class="step-body">
+    <p>In the left sidebar under <b>LOG COLLECTOR</b>, click <b>Data Collection</b>.
+       Leave the ticked boxes as they are, then click <b>Start collection</b>.</p>
+    <p>When it finishes, click <b>Open last output</b>. The bundle is a dated folder
+       containing a zip.</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-head"><span class="num">9</span><h3>Send them over</h3></div>
+  <div class="step-body">
+    <p>Send your Johnson Controls engineer the <code>.dmp</code> file and the collection
+       zip. Dumps are large &mdash; expect to use a file transfer link rather than email.</p>
+    <div class="note">
+      <b>Once support has what it needs</b>
+      Open LogDump, click <b>Stop</b>, then <b>Remove Task</b>. That takes the scheduled
+      task off the server. Delete any leftover <code>.dmp</code> files &mdash; a crash
+      dump contains the contents of the process's memory, so treat it as sensitive and
+      do not leave copies lying around.
+    </div>
+  </div>
+</div>
+
+<!-- ======================= TROUBLE ======================= -->
+<h2 class="sec">If something looks wrong</h2>
+<table>
+  <tr><th style="width:62mm">What you see</th><th>What to do</th></tr>
+  <tr>
+    <td class="k">No ProcDump binary found</td>
+    <td><code>procdump64.exe</code> is not in the same folder as <code>LogDump.exe</code>.
+        Copy it in and reopen LogDump.</td>
+  </tr>
+  <tr>
+    <td class="k">32-bit process &rarr; procdump.exe</td>
+    <td>Wrong target selected, or the wrong process is being watched. Stop and contact
+        your engineer.</td>
+  </tr>
+  <tr>
+    <td class="k">could not determine target bitness</td>
+    <td>Do not continue. Send a photo of the window to your engineer.</td>
+  </tr>
+  <tr>
+    <td class="k">Crash happened, no .dmp file</td>
+    <td>Click <b>View Logs</b> at the bottom of the window and send the log that opens.</td>
+  </tr>
+  <tr>
+    <td class="k">Nothing in the status panel</td>
+    <td>Close LogDump and reopen it as Administrator. Without elevation it cannot read
+        the scheduled task.</td>
+  </tr>
+</table>
+
+<h2 class="sec">The buttons along the bottom</h2>
+<table>
+  <tr><th style="width:38mm">Button</th><th>What it does</th></tr>
+  <tr><td class="k">Create Task</td><td>Saves your settings and arms the capture. The main action.</td></tr>
+  <tr><td class="k">Run Now</td><td>Starts it immediately instead of waiting for the next reboot.</td></tr>
+  <tr><td class="k">Stop</td><td>Stops the capture, leaving it set up.</td></tr>
+  <tr><td class="k">Remove Task</td><td>Removes it from the server entirely.</td></tr>
+  <tr><td class="k">Save Config</td><td>Saves settings without arming anything.</td></tr>
+  <tr><td class="k">Open Dumps</td><td>Opens your dump folder.</td></tr>
+  <tr><td class="k">View Logs</td><td>Opens LogDump's own log &mdash; the first thing support will ask for.</td></tr>
+</table>
+
+<p class="lastline">
+  LogDump reads and writes only the folder it lives in and the dump folder you choose.
+  It does not modify C&bull;CURE, and it does not change how CrossFire runs.
+  Capturing a dump briefly pauses the process while the file is written.
+</p>
+
+</body>
+</html>
