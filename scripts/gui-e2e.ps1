@@ -181,9 +181,11 @@ function Find-El([string]$class, [string]$namePattern, [object]$root = $win) {
 function Find-Nav([string]$name) {
     $winX = $win.Current.BoundingRectangle.X
     foreach ($el in All-Els $win) {
-        # -ceq (case-SENSITIVE): the "MONITOR" group caption would otherwise
-        # match "Monitor" under PowerShell's default case-insensitive -eq and
-        # shadow the real (clickable) nav item.
+        # -ceq (case-SENSITIVE). Kept as a guard: while the first nav item was
+        # named "Monitor", the "MONITOR" group caption matched it under
+        # PowerShell's default case-insensitive -eq and shadowed the real
+        # (clickable) row. That item is "ProcDump" now, but any future nav label
+        # that differs from a group caption only by case would hit this again.
         if ($el.Current.ClassName -ieq 'STATIC' -and $el.Current.Name -ceq $name -and
             -not $el.Current.IsOffscreen -and ($el.Current.BoundingRectangle.X - $winX) -lt 260) { return $el }
     }
@@ -499,11 +501,11 @@ $about = Require (Find-Nav 'About') "nav: About"
 Click-El $about; Wait-Idle; Shot '09-about'
 Write-Host "nav:   About"
 
-# Back to Monitor: status panel must still render.
-$mon = Require (Find-Nav 'Monitor') "nav: Monitor"
+# Back to the ProcDump page: status panel must still render.
+$mon = Require (Find-Nav 'ProcDump') "nav: ProcDump"
 Click-El $mon; Wait-Idle; Shot '10-back-monitor'
-if (-not (Find-Status)) { Fail "status panel missing after returning to Monitor" }
-Write-Host "nav:   Monitor (status panel intact)"
+if (-not (Find-Status)) { Fail "status panel missing after returning to ProcDump" }
+Write-Host "nav:   ProcDump (status panel intact)"
 
 # =====================  TargetPath survives a real save  =====================
 # The ONLY possible coverage for bitness::capture_target_path's single call

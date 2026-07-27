@@ -31,7 +31,7 @@ pub struct WizardState {
 const PAGE_COUNT: usize = 5;
 
 const PAGE_TITLES: [&str; PAGE_COUNT] = [
-    "Monitor",
+    "ProcDump",
     "Data Collection",
     "Install Logs",
     "System Health",
@@ -45,7 +45,7 @@ const PAGE_SUBTITLES: [&str; PAGE_COUNT] = [
     "Version and build information.",
 ];
 const SIDEBAR_NAMES: [&str; PAGE_COUNT] =
-    ["Monitor", "Data Collection", "Install Logs", "System Health", "About"];
+    ["ProcDump", "Data Collection", "Install Logs", "System Health", "About"];
 
 // Sidebar geometry (logical px). Two group captions + five clickable rows.
 const ROW_YS: [i32; PAGE_COUNT] = [118, 184, 220, 256, 304];

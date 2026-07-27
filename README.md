@@ -13,7 +13,7 @@ A single-EXE Windows utility for C•CURE field support. It does two jobs:
 
 1. Copy the published `LogDump.exe` and `procdump64.exe` into the same folder on the target machine.
 2. Run `LogDump.exe` — it will request Administrator privileges automatically.
-3. To arm crash capture: on the **Monitor** page pick a target, then click **Create Task** and **Run Now** in the footer.
+3. To arm crash capture: on the **ProcDump** page pick a target, then click **Create Task** and **Run Now** in the footer.
 4. To produce a support bundle: pick a page under **LOG COLLECTOR** and click its start button. Output lands on the Desktop unless you set a save path.
 
 > Single self-contained EXE (~2 MB) — no runtime to install, nothing else to copy besides `procdump64.exe`.
@@ -52,13 +52,13 @@ A freely-clickable sidebar shell — no wizard, no page order. Two groups plus A
 
 | Group | Page | Purpose |
 |-------|------|---------|
-| **MONITOR** | **Monitor** | Everything for crash capture: target, ProcDump options, schedule, notify essentials, live status, and the action footer. |
+| **MONITOR** | **ProcDump** | Everything for crash capture: target, ProcDump options, schedule, notify essentials, live status, and the action footer. |
 | **LOG COLLECTOR** | **Data Collection** | The main C•CURE bundle — system info, installed applications and updates, event logs, SWHSystem settings, and this tool's own logs/dumps/task state. |
 | | **Install Logs** | C•CURE installer logs and `InstallHistory.xml`. |
 | | **System Health** | A point-in-time health snapshot. |
 | — | **About** | Branding, attribution, and the build-date stamp. |
 
-Two power-user panels open as separate windows from the Monitor page: **Advanced…** ("Advanced options" — performance-counter triggers, exception filters, WER registration, log and dump retention) and **SMTP…** ("SMTP settings" — the full mail configuration).
+Two power-user panels open as separate windows from the ProcDump page: **Advanced…** ("Advanced options" — performance-counter triggers, exception filters, WER registration, log and dump retention) and **SMTP…** ("SMTP settings" — the full mail configuration).
 
 Every collector page has the same shape: tick what to gather, optionally set a save path (blank = Desktop), start it, and use **Open last output** when it finishes. Collection runs on a worker thread, so the window stays responsive.
 
@@ -66,9 +66,9 @@ The start button is named per page — **Start collection** (Data Collection), *
 
 ---
 
-## Monitor Page — Field-by-Field Reference
+## ProcDump Page — Field-by-Field Reference
 
-The field tables below are grouped by concern. All of it lives on the single Monitor page unless a row says otherwise.
+The field tables below are grouped by concern. All of it lives on the single ProcDump page unless a row says otherwise.
 
 ---
 
@@ -177,7 +177,7 @@ For .NET targets it also reads the CLR header, because a managed **AnyCPU** asse
 
 #### Advanced options *(separate window)*
 
-Most users should leave these empty. Click **Advanced…** on the Monitor page to open the "Advanced options" window.
+Most users should leave these empty. Click **Advanced…** on the ProcDump page to open the "Advanced options" window.
 
 | Field | ProcDump flag | Description |
 |-------|--------------|-------------|
@@ -224,12 +224,12 @@ Configure optional notifications sent when a dump file is captured.
 
 #### Email
 
-The Monitor page carries only the essentials — the **Email** toggle and the recipient list. Everything else is behind **SMTP…**, in the "SMTP settings" window.
+The ProcDump page carries only the essentials — the **Email** toggle and the recipient list. Everything else is behind **SMTP…**, in the "SMTP settings" window.
 
 | Field | Where | Description |
 |-------|-------|-------------|
-| **Email** | Monitor page | Master toggle for email notifications. |
-| **To (;-sep)** | Monitor page | One or more recipient addresses, separated by semicolons. |
+| **Email** | ProcDump page | Master toggle for email notifications. |
+| **To (;-sep)** | ProcDump page | One or more recipient addresses, separated by semicolons. |
 | **SMTP server** | SMTP… window | Hostname or IP of your mail relay (e.g. `smtp.corp.example.com`). |
 | **Port** | SMTP… window | SMTP port. Common values: `25` (unencrypted relay), `587` (STARTTLS), `465` (implicit SSL). |
 | **Use SSL/TLS** | SMTP… window | Enable TLS/SSL encryption for the SMTP connection. |
@@ -263,7 +263,7 @@ Under "Logs & retention" in the **Advanced…** window.
 
 ### Action footer
 
-A row of buttons pinned to the bottom of the window. It is shown only on the Monitor page — switching to a collector page hides it.
+A row of buttons pinned to the bottom of the window. It is shown only on the ProcDump page — switching to a collector page hides it.
 
 | Button | What it does |
 |--------|-------------|
@@ -279,7 +279,7 @@ A row of buttons pinned to the bottom of the window. It is shown only on the Mon
 
 #### Live status
 
-The Monitor page polls `schtasks` and `health.json` every 3 seconds and shows the result in a status panel — whether the task exists, its state, and the monitor's last heartbeat. There is no blind "done" message; the panel reflects real system state.
+The ProcDump page polls `schtasks` and `health.json` every 3 seconds and shows the result in a status panel — whether the task exists, its state, and the monitor's last heartbeat. There is no blind "done" message; the panel reflects real system state.
 
 ---
 
