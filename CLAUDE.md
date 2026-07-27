@@ -64,41 +64,44 @@ and the 32-bit managed stacks are unusable.
   No args → scans running `SoftwareHouse.*`. Compare its RESOLVED column
   against Task Manager's Platform column.
 
-### Measured on a live C·CURE server (host CCUREHA, 2026-07-27)
+### VERIFIED against a live C·CURE server (host CCUREHA, 2026-07-27) — 10/10
 
-First time anything in this project ran against real hardware. Keep this table —
-it is the evidence that the COR20 read is load-bearing, and it cannot be
-reproduced without a C·CURE box.
+`bitness_from_pe`'s answer was compared row-for-row against Task Manager →
+Details → Platform on a running C·CURE 9000 system. **Every one of the ten
+Software House processes matched.** Keep this table — it is the proof that the
+COR20 read is load-bearing, and it cannot be reproduced without a C·CURE box.
 
 ```
-File                                                    Machine  Kind             Resolved
-SoftwareHouse.CrossFire.Server.exe                       0x014C  managed AnyCPU   64-bit
-SoftwareHouse.CrossFire.ImportWatcherService.exe         0x014C  managed AnyCPU   64-bit
-SoftwareHouse.CrossFire.ReportServerService.exe          0x014C  managed AnyCPU   64-bit
-SoftwareHouse.NextGen.iSTAR_DriverService.exe            0x014C  managed AnyCPU   64-bit
-SoftwareHouse.CrossFire.ServerComponentFramework.exe     0x014C  managed x86      32-bit
-SoftwareHouse.NextGen.Client.AdminWorkstation.exe        0x014C  managed x86      32-bit
-SoftwareHouse.NextGen.Client.MonitoringStation.exe       0x014C  managed x86      32-bit
-SoftwareHouse...Nantucket.GlobalAntipassbackManager.exe  0x014C  native           32-bit
-SoftwareHouse...Nantucket.SessionKeyManager.exe          0x8664  native           64-bit
-SoftwareHouse...Nantucket.SQLiteManager.exe              0x8664  native           64-bit
+File                                                    Machine  Kind             Ours    TaskMgr
+SoftwareHouse.CrossFire.Server.exe                       0x014C  managed AnyCPU   64-bit  64 bit / x64
+SoftwareHouse.CrossFire.ImportWatcherService.exe         0x014C  managed AnyCPU   64-bit  64 bit / x64
+SoftwareHouse.CrossFire.ReportServerService.exe          0x014C  managed AnyCPU   64-bit  64 bit / x64
+SoftwareHouse.NextGen.iSTAR_DriverService.exe            0x014C  managed AnyCPU   64-bit  64 bit / x64
+SoftwareHouse.CrossFire.ServerComponentFramework.exe     0x014C  managed x86      32-bit  32 bit / x86
+SoftwareHouse.NextGen.Client.AdminWorkstation.exe        0x014C  managed x86      32-bit  32 bit / x86
+SoftwareHouse.NextGen.Client.MonitoringStation.exe       0x014C  managed x86      32-bit  32 bit / x86
+SoftwareHouse...Nantucket.GlobalAntipassbackManager.exe  0x014C  native           32-bit  32 bit / x86
+SoftwareHouse...Nantucket.SessionKeyManager.exe          0x8664  native           64-bit  64 bit / x64
+SoftwareHouse...Nantucket.SQLiteManager.exe              0x8664  native           64-bit  64 bit / x64
 ```
 
-Eight of ten report `Machine == 0x014C` and split 4 × 64-bit / 4 × 32-bit. The
-Machine field alone cannot separate them; only the COR20/CLR flags can.
+**Eight of ten report `Machine == 0x014C` and split 4 × 64-bit / 4 × 32-bit.**
+The Machine field alone cannot separate them; only the COR20/CLR flags can, and
+the OS agrees with the COR20 answer in all eight cases.
 
-**`CrossFire.Server.exe` — the default target — is AnyCPU.** A Machine-only
-check calls it x86 and hands it the 32-bit `procdump.exe`, which cannot capture
-a 64-bit process at all. Silent no-dump on the most important target. That is
-what this code exists to prevent; do not "simplify" it away.
+**`CrossFire.Server.exe` — the default target — is AnyCPU, header `0x014C`, and
+Windows runs it x64.** A Machine-only check calls it x86 and hands it the 32-bit
+`procdump.exe`, which cannot capture a 64-bit process at all: silent no-dump on
+the most important target. That is not a hypothesis any more. Do not
+"simplify" the COR20 walk away.
 
 `CrossFire.Server.exe` (64-bit) and `CrossFire.ServerComponentFramework.exe`
 (32-bit) run side by side on one box, both reporting `0x014C`. There is no
 correct per-install answer — resolution must be per-target.
 
-**Not yet closed:** RESOLVED has not been compared against Task Manager →
-Details → Platform. This is "our logic is self-consistent on real binaries", not
-yet "our logic matches the OS". Do that comparison on the next server visit.
+Incidental but useful: the two Client processes run as the interactive user,
+everything else as SYSTEM. The monitor's task runs as SYSTEM, so a Client target
+means attaching across sessions.
 
 ## Strings frozen at the LogDump rename (shipped 2026-07-26 — do not "finish")
 
